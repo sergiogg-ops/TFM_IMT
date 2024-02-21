@@ -5,7 +5,9 @@ bloom, 560M parametros -> https://huggingface.co/bigscience/bloom-560m
 llama, small (101M parametros) -> https://huggingface.co/BEE-spoke-data/smol_llama-101M-GQA
 deberta, base (86M parametros) -> https://huggingface.co/microsoft/deberta-v3-base
 deberta, large(304M parametros) -> https://huggingface.co/microsoft/deberta-v3-large
-Mamba: investigar si tiene buena pinta y se puede usar para traducción
+Mamba, fine-tuning 130M -> https://huggingface.co/Q-bert/Mamba-370M
+MBart, many-to-one -> https://huggingface.co/facebook/mbart-large-50-many-to-one-mmt
+MT5 -> https://huggingface.co/google/mt5-base
 
 
 DATASETS
@@ -17,4 +19,4 @@ MTNT, (frances <-> japones) -> https://paperswithcode.com/dataset/mtnt
 
 
 
-MT5, MBart
+https://huggingface.co/learn/nlp-course/chapter7/4
