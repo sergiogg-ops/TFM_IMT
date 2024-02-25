@@ -2,6 +2,7 @@
 from argparse import ArgumentParser
 
 import evaluate
+import numpy as np
 import torch
 import transformers as trans
 

@@ -2,6 +2,7 @@
 from argparse import ArgumentParser
 
 import evaluate
+import numpy as np
 import torch
 import transformers as trans
 
@@ -28,7 +29,6 @@ parser.add_argument('-save_limit','--save_total_limit',type=int,default=50,help=
 parser.add_argument('-model_only','--save_only_model',action='store_true',default=False,help='Indica si guardar solo el modelo en los checkpoints.')
 parser.add_argument('-cpu','--use_cpu',action='store_true',default=False,help='Indica si usar la CPU en vez de CUDA.')
 parser.add_argument('-workers','--num_workers',default=0,type=int,help='Número de procesos de CPU para el dataloader.')
-parser.add_argument('-warm_start','--resume_from_checkpoint',action='store_true',default=False,help='Indica si empezar desde el modelo guardado en los checkpoints.')
 args = parser.parse_args()
 
 if args.max_steps:
@@ -38,11 +38,10 @@ if args.max_steps:
                                             weight_decay=args.weight_decay,max_steps=args.max_steps,
                                             lr_scheduler_type='linear',
                                             save_strategy=args.save_strategy,save_steps=args.save_steps,save_total_limit=args.save_total_limit,
-                                            save_only_model=args.save_only_model, use_cpu=args.use_cpu,eval_steps=args.eval_steps,
+                                            eval_steps=args.eval_steps,
                                             dataloader_num_workers=args.num_workers, load_best_model_at_end=True,
                                             metric_for_best_model='loss',greater_is_better=False,
-                                            optim=args.optim,
-                                            resume_from_checkpoint=args.resume_from_checkpoint)
+                                            optim=args.optim)
 else:
     training_args = trans.Seq2SeqTrainingArguments(output_dir=args.output_dir,overwrite_output_dir=args.overwrite_output_dir,
                                             per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size,
@@ -50,11 +49,10 @@ else:
                                             weight_decay=args.weight_decay,num_train_epochs=args.epochs,
                                             lr_scheduler_type='linear',
                                             save_strategy=args.save_strategy,save_steps=args.save_steps,save_total_limit=args.save_total_limit,
-                                            save_only_model=args.save_only_model, use_cpu=args.use_cpu,eval_steps=args.eval_steps,
+                                            eval_steps=args.eval_steps,
                                             dataloader_num_workers=args.num_workers, load_best_model_at_end=True,
                                             metric_for_best_model='loss',greater_is_better=False,
-                                            optim=args.optim,
-                                            resume_from_checkpoint=args.resume_from_checkpoint)
+                                            optim=args.optim)
 
 tokenizer = trans.AutoTokenizer.from_pretrained("facebook/mbart-large-50-many-to-one-mmt")
 model = trans.AutoModelForSeq2SeqLM.from_pretrained("facebook/mbart-large-50-many-to-one-mmt")
@@ -75,6 +73,7 @@ class Eutrans(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         input = tokenizer(self.source[idx],text_target=self.target[idx])
+        print(input)
         return input
 
 train_data = Eutrans(args.source_train,args.target_train)
@@ -111,3 +110,9 @@ trainer = trans.Seq2SeqTrainer(
     tokenizer=tokenizer,
     compute_metrics=compute_metrics,
 )
+
+results = trainer.evaluate()
+print('Antes de fine-tunning:\n\tLoss = ' + str(results['eval_loss']) + '\n\tBLEU = ' + str(results['eval_bleu']))
+trainer.train()
+results = trainer.evaluate()
+print('Despues de fine-tunning:\n\tLoss = ' + str(results['eval_loss']) + '\n\tBLEU = ' + str(results['eval_bleu']))
