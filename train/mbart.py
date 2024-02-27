@@ -54,8 +54,8 @@ else:
                                             metric_for_best_model='loss',greater_is_better=False,
                                             optim=args.optim)
 
-tokenizer = trans.AutoTokenizer.from_pretrained("facebook/mbart-large-50-many-to-one-mmt")
-model = trans.AutoModelForSeq2SeqLM.from_pretrained("facebook/mbart-large-50-many-to-one-mmt")
+tokenizer = trans.AutoTokenizer.from_pretrained("google/mt5-base")
+model = trans.AutoModelForSeq2SeqLM.from_pretrained("google/mt5-base")
 
 data_collator = trans.DataCollatorForSeq2Seq(tokenizer, model=model)
 
@@ -72,8 +72,10 @@ class Eutrans(torch.utils.data.Dataset):
         return len(self.source)
     
     def __getitem__(self, idx):
+        #print('Original:',self.source[idx])
+        #print('Traduccion:',self.target[idx])
         input = tokenizer(self.source[idx],text_target=self.target[idx])
-        print(input)
+        #print(input)
         return input
 
 train_data = Eutrans(args.source_train,args.target_train)
