@@ -8,6 +8,8 @@ bloom, 560M parametros -> https://huggingface.co/bigscience/bloom-560m
 
 llama, small (101M parametros) -> https://huggingface.co/BEE-spoke-data/smol_llama-101M-GQA
 
+towe, sobre Llama → https://huggingface.co/Unbabel/TowerBase-7B-v0.1
+
 deberta, base (86M parametros) -> https://huggingface.co/microsoft/deberta-v3-base
 
 deberta, large(304M parametros) -> https://huggingface.co/microsoft/deberta-v3-large
