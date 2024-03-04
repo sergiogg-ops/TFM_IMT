@@ -56,8 +56,8 @@ def gen(shards):
 
 
 def load_datasets(args):
-	shards = [	'/dataset/europarl-inmt/{0}/tr.{1}'.format(args.folder, args.source), 
-				'/dataset/europarl-inmt/{0}/tr.{1}'.format(args.folder, args.target)
+	shards = [	'{0}/tr.{1}'.format(args.folder, args.source), 
+				'{0}/tr.{1}'.format(args.folder, args.target)
 				]
 	raw_dataset = Dataset.from_generator(gen, gen_kwargs={"shards": shards})
 	tokenized_dataset = raw_dataset.map(preprocess_dataset, batched=True)
@@ -222,8 +222,8 @@ def main():
 
 	device = get_device()
 	METRIC = load_metric("sacrebleu")
-	MODEL = load_model("./mbart-large-50-many-to-many-mmt", device)
-	TOKENIZER = load_tokenizer("./mbart-large-50-many-to-many-mmt", args)
+	MODEL = load_model("facebook/mbart-large-50-many-to-many-mmt", device)
+	TOKENIZER = load_tokenizer("facebook/mbart-large-50-many-to-many-mmt", args)
 
 	dataset = load_datasets(args)
 

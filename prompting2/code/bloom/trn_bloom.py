@@ -88,7 +88,7 @@ def compute_metrics(eval_preds):
 #|===============================================
 #| CARGAR MODELO Y TOKENIZADOR
 lm_option = 'default_Model'
-lm_path = './bloom-560m'
+lm_path = 'bigscience/bloom-560m'
 if lm_option == 'bloom_Model':
 	model 	  = BloomForCausalLM.from_pretrained(lm_path, device_map="auto")
 	tokenizer = BloomTokenizerFast.from_pretrained(lm_path)
