@@ -14,7 +14,7 @@ parser.add_argument('-tgt_tr','--target_train',default='EuTrans/train/training.e
 parser.add_argument('-tgt_ev','--target_evaluation',default='EuTrans/dev/development.en',help='Archivo con el conjunto de evaluacion en lengua destino.')
 parser.add_argument('-out_dir','--output_dir',default='mbart',help='Directorio en que se escriben las predicciones del modelo y checkpoints.')
 parser.add_argument('-a_out_dir','--overwrite_output_dir',action='store_true',default=False,help='Indica si se sobreescribe el directorio de salida.')
-parser.add_argument('-bs','--batch_size',default=32,type=int,help='Tamaño de batch.')
+parser.add_argument('-bs','--batch_size',default=16,type=int,help='Tamaño de batch.')
 parser.add_argument('-eval','--eval_strategy',default='epoch',choices=['no','epoch','steps'],help='Estrategia de evaluacion: al final de cada epoch o tras el numero de pasos especificado.')
 parser.add_argument('-eval_steps','--eval_steps',default=100,type=int,help='Numero de actualizaciones antes de la siguiente evaluacion si la estrategia de evaluacion es steps.')
 parser.add_argument('-lr','--learning_rate',default=1e-3,type=float,help='Tasa de aprendizaje.')
@@ -80,6 +80,9 @@ class Eutrans(torch.utils.data.Dataset):
 
 train_data = Eutrans(args.source_train,args.target_train)
 eval_data = Eutrans(args.source_evaluation,args.target_evaluation)
+
+tokenizer = trans.AutoTokenizer.from_pretrained("google/flan-t5-small")
+model = trans.AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
 
 metric = evaluate.load('sacrebleu')
 
