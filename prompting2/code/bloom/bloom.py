@@ -1,6 +1,7 @@
 from transformers import BloomTokenizerFast, BloomForCausalLM
 from nltk.tokenize import wordpunct_tokenize
 import torch
+import os
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -33,28 +34,29 @@ def check_prefix(target, hyp):
 #|    SOURCE FILE
 #| >src_lines
 #|====================== 
-src_lines = read_file('/dataset/test-Paco/europarl-v7.es-en-test-hidden.en')
+#src_lines = read_file('/dataset/test-Paco/europarl-v7.es-en-test-hidden.en')
+src_lines = read_file('../europarl-inmt/es-en/test.en')
 
 #|====================== 
 #|    OUTPUT FILE
 #| >file_w
 #|======================
-file_w = open('/dataset/test-Paco/europarl-v7.es-en-test-hidden.es', 'w')
+file_w = open('output.es', 'w')
 
 #|====================== 
 #|    LOAD MODELS
 #| >tokenizer
 #| >model
 #|======================
-tokenizer = BloomTokenizerFast.from_pretrained("./bloom-1b7", device_map="auto")
-model = BloomForCausalLM.from_pretrained("./bloom-1b7", device_map="auto")
+tokenizer = BloomTokenizerFast.from_pretrained("bigscience/bloom-1b7", device_map="auto")
+model = BloomForCausalLM.from_pretrained("bigscience/bloom-1b7", device_map="auto")
 
 #|======================
 #|   READ THE PROMPT
 #| >header_prompt
 #| >header_size
 #|======================
-file_r = open('prompt1.txt', 'r')
+file_r = open('prompting2/code/bloom/prompt1.txt', 'r')
 header_prompt = file_r.read()
 header_size = len(tokenizer(header_prompt, return_tensors="pt").input_ids[0])-1
 file_r .close()
