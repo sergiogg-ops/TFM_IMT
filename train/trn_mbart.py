@@ -230,7 +230,6 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-save','--save',help='Folder to save the fine-tuned model')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
 
 	args = parser.parse_args()
@@ -251,14 +250,15 @@ def main():
 	dataset = load_datasets(args)
 
 	training_args = Seq2SeqTrainingArguments(
-		'models/europarl_{0}'.format(args.source+args.target),
+		'models/mbart_{0}'.format(args.source+args.target),
 		evaluation_strategy='steps',
 		eval_steps=10000,
 		learning_rate=2e-5,
 		per_device_train_batch_size=16,
 		per_device_eval_batch_size=16,
 		weight_decay=0.01,
-		save_total_limit=10,
+		save_total_limit=3,
+		save_steps=10000,
 		num_train_epochs=3,
 		predict_with_generate=True,
 		fp16=True,
@@ -281,16 +281,6 @@ def main():
 	trainer.train()
 	results = trainer.evaluate()
 	print(f'Despues de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
-	if args.save:
-		if not os.path.exists(args.save):
-			os.mkdir(args.save)
-		name = args.save
-		name += '/' if args.save[-1] != '/' else ''
-		name += 'mt5_' + args.source + '-' + args.target
-		if args.lora:
-			name += '_lora'
-		MODEL.save_pretrained(name)
-		TOKENIZER.save_pretrained(name + '_tok')
 
 
 
