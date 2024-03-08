@@ -72,13 +72,13 @@ def gen(shards):
 
 
 def load_datasets(args):
-	shards = [	f"{args.trn}tr.{args.source}", 
-				f"{args.trn}tr.{args.target}"
+	shards = [	f"{args.folder}tr.{args.source}", 
+				f"{args.folder}tr.{args.target}"
 				]
 	training = Europarl(shards[0],shards[1],TOKENIZER)
 
-	shards = [	f"{args.dev}dev.{args.source}",
-				f"{args.dev}dev.{args.target}"
+	shards = [	f"{args.folder}dev.{args.source}",
+				f"{args.folder}dev.{args.target}"
 				]	
 	development = Europarl(shards[0],shards[1],TOKENIZER)
 
@@ -230,6 +230,8 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
+	parser.add_argument('-save','--save',help='Folder to save the fine-tuned model')
+	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
 
 	args = parser.parse_args()
 	return args
@@ -274,7 +276,21 @@ def main():
 		tokenizer=TOKENIZER,
 		compute_metrics=compute_metrics
 		)
+	results = trainer.evaluate()
+	print(f'Antes de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
 	trainer.train()
+	results = trainer.evaluate()
+	print(f'Despues de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
+	if args.save:
+		if not os.path.exists(args.save):
+			os.mkdir(args.save)
+		name = args.save
+		name += '/' if args.save[-1] != '/' else ''
+		name += 'mt5_' + args.source + '-' + args.target
+		if args.lora:
+			name += '_lora'
+		MODEL.save_pretrained(name)
+		TOKENIZER.save_pretrained(name + '_tok')
 
 
 
