@@ -18,6 +18,8 @@ Mamba, fine-tuning 130M -> https://huggingface.co/Q-bert/Mamba-370M
 
 MBart, many-to-one -> https://huggingface.co/facebook/mbart-large-50-many-to-one-mmt
 
+MBart, many-to-many -> https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt
+
 MT5 -> https://huggingface.co/google/mt5-base
 
 
