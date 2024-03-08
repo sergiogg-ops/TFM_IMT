@@ -22,6 +22,8 @@ MBart, many-to-many -> https://huggingface.co/facebook/mbart-large-50-many-to-ma
 
 MT5 -> https://huggingface.co/google/mt5-base
 
+M2M, many-to-many -> https://huggingface.co/docs/transformers/model_doc/m2m_100
+
 
 DATASETS
 
