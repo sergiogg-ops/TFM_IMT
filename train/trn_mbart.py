@@ -4,20 +4,17 @@ Fine Tune Mbart Model
 Example of use:
 	> python3 imt_bart.py -src es -trg en -dir es-en
 """
-from transformers import MT5ForConditionalGeneration, AutoTokenizer
+from transformers import MBartForConditionalGeneration, MBart50TokenizerFast
 from transformers import Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, Seq2SeqTrainer
-from transformers import EarlyStoppingCallback
-from datasets import Dataset, DatasetDict, load_metric
+from datasets import DatasetDict, load_metric
 import numpy as np
 import argparse
 import torch
-import peft
-import os
+import sys
 
 MODEL = None
 METRIC = None
 TOKENIZER = None
-
 
 class Europarl(torch.utils.data.Dataset):
     def __init__(self,source,target,tok):
@@ -41,12 +38,14 @@ def get_device():
 
 
 def load_model(model_path, _dev=None):
-	_mdl = MT5ForConditionalGeneration.from_pretrained(model_path).to(_dev)
+	_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
 	return _mdl
 
 
 def load_tokenizer(tokenizer_path, args):
-	_tok = AutoTokenizer.from_pretrained(tokenizer_path)
+	_tok = MBart50TokenizerFast.from_pretrained(tokenizer_path)
+	_tok.src_lang = args.source_code
+	_tok.tgt_lang = args.target_code
 	return _tok
 
 
@@ -70,6 +69,7 @@ def gen(shards):
 
 	for src_line, tgt_line in zip(src_data, tgt_data):
 		yield {"translation": {'src': src_line, 'tgt': tgt_line}}
+
 
 def load_datasets(args):
 	shards = [	f"{args.trn}tr.{args.source}", 
@@ -111,17 +111,125 @@ def compute_metrics(eval_preds):
 	result = {k: round(v,4) for k, v in result.items()}
 	return result
 
+def check_language_code(code):
+	if code=='ar':			# Arabic
+		return 'ar_AR'
+	elif code == 'cs':		# Czech
+		return 'cs_CZ'
+	elif code == 'de':		# German
+		return 'de_DE'
+	elif code == 'en':		# English
+		return 'en_XX'
+	elif code == 'es':		# Spanish
+		return 'es_XX'
+	elif code == 'et':		# Estonian
+		return 'et_EE'
+	elif code == 'fi':		# Finnish
+		return 'fi_FI'
+	elif code == 'fr':		# French
+		return 'fr_XX'
+	elif code == 'gu':		# Gujarati
+		return 'gu_IN'
+	elif code == 'hi':		# Hindi
+		return 'hi_IN'
+	elif code == 'it':		# Italian
+		return 'it_IT'
+	elif code == 'ja':		# Japanese
+		return 'ja_XX'
+	elif code == 'kk':		# Kazakh
+		return 'kk_KZ'
+	elif code == 'ko':		# Korean
+		return 'ko_KR'
+	elif code == 'lt':		# Lithuanian
+		return 'lt_LT'
+	elif code == 'lv':		# Latvian
+		return 'lv_LV'
+	elif code == 'my':		# Burmese
+		return 'my_MM'
+	elif code == 'ne':		# Nepali
+		return 'ne_NP'
+	elif code == 'nl':		# Ducht
+		return 'nl_XX'
+	elif code == 'ro':		# Romanian
+		return 'ro_RO'
+	elif code == 'ru':		# Russian
+		return 'ru_RU'
+	elif code == 'si':		# Sinhala
+		return 'si_LK'
+	elif code == 'tr':		# Turkish
+		return 'tr_TR'
+	elif code == 'vi':		# Vietnamese
+		return 'vi_VN'
+	elif code == 'zh':		# Chinese
+		return 'zh_CN'
+	elif code == 'af':		# Afrikaans
+		return 'af_ZA'
+	elif code == 'az':		# Azerbaijani
+		return 'az_AZ'
+	elif code == 'bn':		# Bengali
+		return 'bn_IN'
+	elif code == 'fa':		# Persian
+		return 'fa_IR'
+	elif code == 'he':		# Hebrew
+		return 'he_IL'
+	elif code == 'hr':		# Croatian
+		return 'hr_HR'
+	elif code == 'id':		# Indonesian
+		return 'id_ID'
+	elif code == 'ka':		# Georgian
+		return 'ka_GE'
+	elif code == 'km':		# Khmer
+		return 'km_KH'
+	elif code == 'mk':		# Macedonian
+		return 'mk_MK'
+	elif code == 'ml':		# Malayalam
+		return 'ml_IN'
+	elif code == 'mn':		# Mongolian
+		return 'mn_MN'
+	elif code == 'mr':		# Marathi
+		return 'mr_IN'
+	elif code == 'pl':		# Polish
+		return 'pl_PL'
+	elif code == 'ps':		# Pashto
+		return 'ps_AF'
+	elif code == 'pt':		# Portuguese
+		return 'pt_XX'
+	elif code == 'sv':		# Swedish
+		return 'sv_SE'
+	elif code == 'sw':		# Swahili
+		return 'sw_KE'
+	elif code == 'ta':		# Tamil
+		return 'ta_IN'
+	elif code == 'te':		# Telegu
+		return 'te_IN'
+	elif code == 'th':		# Thai
+		return 'th_TH'
+	elif code == 'tl':		# Tagalog
+		return 'tl_XX'
+	elif code == 'uk':		# Ukrainian
+		return 'uk_UA'
+	elif code == 'ur':		# Urdu
+		return 'ur_PK'
+	elif code == 'xh':		# Xhosa
+		return 'xh_ZA'
+	elif code == 'gl':		# Galician
+		return 'gl_ES'
+	elif code == 'sl':		# Slovene
+		return 'sl_SI'
+	else:
+		print('Code not implemented')
+		sys.exit()
+
 def check_parameters(args):
+	args.source_code = check_language_code(args.source)
+	args.target_code = check_language_code(args.target)
 	return args
 
 def read_parameters():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
-	parser.add_argument("-trn", "--trn", required=True, help="Folder where is the training dataset")
-	parser.add_argument("-dev", "--dev", required=True, help="Folder where is the development dataset")
-	parser.add_argument('-save','--save',help='Folder to save the fine-tuned model')
-	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
+	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 
 	args = parser.parse_args()
 	return args
@@ -134,31 +242,24 @@ def main():
 	print(args)
 
 	device = get_device()
-	print(device)
 	METRIC = load_metric("sacrebleu")
-	MODEL = load_model("google/mt5-base", device)
-	if args.lora:
-		lora_config = peft.LoraConfig(r=32, lora_alpha=32, lora_dropout=0.3)
-		MODEL = peft.LoraModel(MODEL, lora_config, "default")
-	TOKENIZER = load_tokenizer("google/mt5-base", args)
+	MODEL = load_model("facebook/mbart-large-50-many-to-many-mmt", device)
+	TOKENIZER = load_tokenizer("facebook/mbart-large-50-many-to-many-mmt", args)
 
 	dataset = load_datasets(args)
 
 	training_args = Seq2SeqTrainingArguments(
 		'models/europarl_{0}'.format(args.source+args.target),
-		#evaluation_strategy='steps',
-		#eval_steps=100000000000000000000000,
-		save_steps=10000,
-		save_total_limit = 30,
+		evaluation_strategy='steps',
+		eval_steps=10000,
 		learning_rate=2e-5,
-		per_device_train_batch_size=128,
-		per_device_eval_batch_size=128,
+		per_device_train_batch_size=16,
+		per_device_eval_batch_size=16,
 		weight_decay=0.01,
-		num_train_epochs=5,
+		save_total_limit=10,
+		num_train_epochs=3,
 		predict_with_generate=True,
-		fp16=False, # Tiene que estar a False para que funcione con MT5
-		#load_best_model_at_end=True,
-		#metric_for_best_model = 'bleu'
+		fp16=True,
 		)
 
 	data_collator = DataCollatorForSeq2Seq(TOKENIZER, model=MODEL)
@@ -171,24 +272,9 @@ def main():
 		eval_dataset=dataset['test'],
 		data_collator=data_collator,
 		tokenizer=TOKENIZER,
-		compute_metrics=compute_metrics,
-		#callbacks = [EarlyStoppingCallback(early_stopping_patience=5)]
+		compute_metrics=compute_metrics
 		)
-	results = trainer.evaluate()
-	print(f'Antes de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
 	trainer.train()
-	results = trainer.evaluate()
-	print(f'Despues de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
-	if args.save:
-		if not os.path.exists(args.save):
-			os.mkdir(args.save)
-		name = args.save
-		name += '/' if args.save[-1] != '/' else ''
-		name += 'mt5_' + args.source + '-' + args.target
-		if args.lora:
-			name += '_lora'
-		MODEL.save_pretrained(name)
-		TOKENIZER.save_pretrained(name + '_tok')
 
 
 
