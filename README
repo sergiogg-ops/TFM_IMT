@@ -10,8 +10,6 @@ tower, sobre Llama (6.738.472.960 parametros) → https://huggingface.co/Unbabel
 
 Mamba, fine-tuning 130M -> https://huggingface.co/Q-bert/Mamba-370M
 
-MBart, many-to-one -> https://huggingface.co/facebook/mbart-large-50-many-to-one-mmt
-
 MBart, many-to-many (610.879.488 parametros) -> https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt
 
 MT5 (582.401.280 parametros) -> https://huggingface.co/google/mt5-base
