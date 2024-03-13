@@ -6,15 +6,15 @@ flan-t5, base (220M parametros) -> https://huggingface.co/google/flan-t5-base
 
 M2M, many-to-many (483.905.536 parametros) -> https://huggingface.co/docs/transformers/model_doc/m2m_100
 
-bloom, 560M parametros -> https://huggingface.co/bigscience/bloom-560m
+bloom, 560M parametros, PROMT -> https://huggingface.co/bigscience/bloom-560m
 
-tower, sobre Llama (6.738.472.960 parametros) → https://huggingface.co/Unbabel/TowerInstruct-7B-v0.1
+tower, sobre Llama, PROMT (6.738.472.960 parametros) → https://huggingface.co/Unbabel/TowerInstruct-7B-v0.1
 
-MT5 (582.401.280 parametros) -> https://huggingface.co/google/mt5-base
+MT5 , ¿PROMT? (582.401.280 parametros) -> https://huggingface.co/google/mt5-base
 
-llama, small (101M parametros) -> https://huggingface.co/BEE-spoke-data/smol_llama-101M-GQA
+llama, small, PROMT (101M parametros) -> https://huggingface.co/BEE-spoke-data/smol_llama-101M-GQA
 
-Mamba, fine-tuning 130M -> https://huggingface.co/Q-bert/Mamba-370M
+Mamba, no multilingüe (130M parametros) -> https://huggingface.co/Q-bert/Mamba-370M
 
 
 DATASETS
