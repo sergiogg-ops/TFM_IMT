@@ -4,13 +4,13 @@ Prefix-Based Approach with Mbart
 Example of use:
 	> python3 imt_bart.py -src es -trg en -dir es-en
 """
-from transformers import MBartForConditionalGeneration, MBart50TokenizerFast
-from nltk.tokenize.treebank import TreebankWordTokenizer
-from transformers import PhrasalConstraint
 import argparse
-import torch
 import sys
 
+import torch
+from nltk.tokenize.treebank import TreebankWordTokenizer
+from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
+                          PhrasalConstraint)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
@@ -76,15 +76,13 @@ def translate(args):
 		#|========================================================
 		#| PREPARE PREFIX FORCER
 		prefix = []
+		vocab = [*range(len(tokenizer))]
 		def restrict_prefix(batch_idx, prefix_beam):
 			pos = len(prefix_beam)
 			if pos<len(prefix):
 				return [prefix[pos]]
-			ids = tokenizer.convert_tokens_to_ids(tokenizer.get_vocab())
-			if not isinstance(ids,list):
-				ids = [ids]
-			#print(pos,'-',type(ids))
-			return ids 
+			ids = vocab
+			return ids
 		#|========================================================
 
 		total_words = 0
