@@ -1,0 +1,3 @@
+modelo,src,trg,ter,bleu,wsr,mar
+mbart-ft,fr,en,,,0.3430,0.0573
+mbart-ft,en,fr,,,0.3098,0.0555
