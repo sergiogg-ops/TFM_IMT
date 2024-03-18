@@ -8,7 +8,7 @@ M2M, many-to-many (483.905.536 parametros) -> https://huggingface.co/docs/transf
 
 bloom, 560M parametros, PROMT -> https://huggingface.co/bigscience/bloom-560m
 
-tower, sobre Llama, PROMT (6.738.472.960 parametros) → https://huggingface.co/Unbabel/TowerInstruct-7B-v0.1
+tower, sobre Llama, PROMT (6.738.472.960 parametros) → https://huggingface.co/Unbabel/TowerInstruct-7B-v0.2
 
 MT5 , ¿PROMT? (582.401.280 parametros) -> https://huggingface.co/google/mt5-base
 
