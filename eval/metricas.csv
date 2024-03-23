@@ -1,3 +1,7 @@
-modelo,src,trg,ter,bleu,wsr,mar
-mbart-ft,fr,en,,,0.3430,0.0573
-mbart-ft,en,fr,,,0.3098,0.0555
+modelo,src,trg,bleu,wsr,mar
+mbart-ft,fr,en,0.3836,0.3430,0.0573
+mbart-ft,en,fr,0.3098,0.0555,0.0555
+mbart-ft,de,en,0.3768,0.3484,0.0567
+mbart-ft,en,de,0.3521,0.3677,0.0524
+mbart-ft,es,en,0.3747,0.3480,0.0568
+mbart-ft,en,es,0.4034,0.3510,0.0536
