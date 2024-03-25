@@ -9,11 +9,146 @@ import sys
 
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
+from transformers.generation import Constraint
 from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
                           PhrasalConstraint)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
+
+class NegativeConstraint(Constraint):
+	r"""Abstract base class for all constraints that can be applied during generation.
+	It must define how the constraint can be satisfied.
+
+	All classes that inherit Constraint must follow the requirement that
+
+	```py
+	completed = False
+	while not completed:
+		_, completed = constraint.update(constraint.advance())
+	```
+
+	will always terminate (halt).
+	"""
+
+	def __init__(self, segment, wrong_word, rest_vocab):
+		self.first = segment
+		self.second = wrong_word
+		self.rest_vocab = rest_vocab
+		self.seen_first = False
+		self.progress = 0
+		self.seqlen = len(segment) + 1
+		# test for the above condition
+		#self.test()
+
+	def test(self):
+		"""
+		Tests whether this constraint has been properly defined.
+		"""
+		counter = 0
+		completed = False
+		while not completed:
+			if counter == 1:
+				self.reset()
+			advance = self.advance()
+			if not self.does_advance(advance):
+				raise Exception(
+					"Custom Constraint is not defined correctly. self.does_advance(self.advance()) must be true."
+				)
+
+			stepped, completed, reset = self.update(advance)
+			counter += 1
+
+			if counter > 10000:
+				raise Exception("update() does not fulfill the constraint.")
+
+		if self.remaining() != 0:
+			raise Exception("Custom Constraint is not defined correctly.")
+
+	def advance(self):
+		"""
+		When called, returns the token that would take this constraint one step closer to being fulfilled.
+
+		Return:
+			token_ids(`torch.tensor`): Must be a tensor of a list of indexable tokens, not some integer.
+		"""
+		if self.seen_first:
+			return self.rest_vocab
+		else:
+			return self.first[self.progress]
+
+	def does_advance(self, token_id: int):
+		"""
+		Reads in a token and returns whether it creates progress.
+		"""
+		if self.seen_first:
+			return bool(token_id != self.second)
+		else:
+			return self.first[self.progress] == token_id
+
+	def update(self, token_id: int):
+		"""
+		Reads in a token and returns booleans that indicate the progress made by it. This function will update the
+		state of this object unlikes `does_advance(self, token_id: int)`.
+
+		This isn't to test whether a certain token will advance the progress; it's to update its state as if it has
+		been generated. This becomes important if token_id != desired token (refer to else statement in
+		PhrasalConstraint)
+
+		Args:
+			token_id(`int`):
+				The id of a newly generated token in the beam search.
+		Return:
+			stepped(`bool`):
+				Whether this constraint has become one step closer to being fulfuilled.
+			completed(`bool`):
+				Whether this constraint has been completely fulfilled by this token being generated.
+			reset (`bool`):
+				Whether this constraint has reset its progress by this token being generated.
+		"""
+		if isinstance(token_id, torch.Tensor):
+			print('Ayuda')
+		if self.progress < len(self.first) and self.first[self.progress] == token_id:
+			self.progress += 1
+			if self.progress == len(self.first):
+				self.seen_first = True
+			return True, False, False
+		elif self.seen_first:
+			fulfilled = token_id != self.second
+			self.progress += fulfilled
+			return fulfilled, fulfilled, not fulfilled
+		else:
+			return False, False, False
+
+	def reset(self):
+		"""
+		Resets the state of this constraint to its initialization. We would call this in cases where the fulfillment of
+		a constraint is abrupted by an unwanted token.
+		"""
+		self.seen_first = False
+		self.progress = 0
+
+	def remaining(self):
+		"""
+		Returns the number of remaining steps of `advance()` in order to complete this constraint.
+		"""
+		return self.seqlen - self.progress
+
+	def copy(self, stateful=False):
+		"""
+		Creates a new instance of this constraint.
+
+		Args:
+			stateful(`bool`): Whether to not only copy the constraint for new instance, but also its state.
+
+		Return:
+			constraint(`Constraint`): The same constraint as the one being called from.
+		"""
+		nueva = NegativeConstraint(self.first, self.second, self.rest_vocab)
+		if stateful:
+			nueva.seen_first = self.seen_first
+			nueva.progress = self.progress
+		return nueva
 
 def read_file(name):
 	file_r = open(name, 'r')
@@ -60,27 +195,42 @@ def check_prefix(target, hyp):
 def check_segments(target,hyp):
 	target = tokenize(target)
 	hyp = tokenize(hyp)
+
 	segments = []; wrong_words = []; buffer = []
 	good_segment = False
-	while hyp:
+	count = 0
+	while hyp and count < 10:
 		while target and hyp and target[0] == hyp[0]:
+			#print('LLenando:',target[0])
+			# llenar buffer y seguir inspeccionando
 			buffer.append(target[0])
 			target = target[1:]
 			hyp = hyp[1:]
 			good_segment = True
-		segments.append(buffer)
-		if good_segment and hyp:
-			wrong_words.append(hyp[0])
-			hyp = hyp[1:]
-			good_segment = False
+		# ¿venimos de procesar un segmento comun? => vaciar buffer
+		if good_segment:
+			segments.append(buffer)
+			buffer = []
+			good_segment = False # ya no :(
+			# si no es el ultimo token
+			if hyp:
+				wrong_words.append(hyp[0])
+			#print('Segments:',segments)
+		# siguiente token comun en la oracion objetivo
 		h = 0
-		while target and target[0] != hyp[0]:
+		#print('hyp:',hyp)
+		while target and hyp and target[0] != hyp[0]:
+			#print('hyp:',hyp)
+			#print('target:',target)
 			while h < len(hyp) and target[0] != hyp[h]:
 				h += 1
-			if target[0] == hyp[h]:
-				hyp = hyp[h:]
-			else:
+			#print('h_idx:',h)
+			if h == len(hyp):
 				target = target[1:]
+				h = 0
+			else:
+				hyp = hyp[h:]
+		count += 1
 	return segments, wrong_words
 
 def translate(args):
@@ -102,18 +252,12 @@ def translate(args):
 		#|========================================================
 		#| PREPARE PREFIX FORCER
 		prefix = []
-		vocab = [*range(len(tokenizer))]
-		def restrict_prefix(batch_idx, prefix_beam):
-			pos = len(prefix_beam)
-			if pos<len(prefix):
-				return [prefix[pos]]
-			ids = vocab
-			return ids
+		VOCAB = [*range(len(tokenizer))]
 		#|========================================================
 
 		total_words = 0
 		total_chars = 0
-		total_ws = 0
+		#total_ws = 0
 		total_ma = 0
 		for i in range(0, len(src_lines)):
 			#if i<1280-1:
@@ -123,7 +267,7 @@ def translate(args):
 			c_trg = ' '.join(tokenize(trg_lines[i]))
 
 			mouse_actions = 0
-			word_strokes = 0
+			#word_strokes = 0
 			n_words = len(tokenize(trg_lines[i]))
 			n_chars = len(trg_lines[i])
 
@@ -132,39 +276,42 @@ def translate(args):
 			encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 
 			# Prints
-			#print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
 
 			ite = 0
 			prefix = []
 			len_old_prefix = 0
 			MAX_TOKENS = 128
-			while (prefix[:len(encoded_trg)] != encoded_trg):
+			constraints = []
+			wrong_words = ['dummy']
+			while wrong_words:
 				# Generate the translation
-				generated_tokens = model.generate(**encoded_src,
+				if constraints:
+					generated_tokens = model.generate(**encoded_src,
 									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS,
-									prefix_allowed_tokens_fn=restrict_prefix).tolist()[0]
+									constraints = constraints).tolist()[0]
+				else:
+					generated_tokens = model.generate(**encoded_src,
+									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+									max_new_tokens=MAX_TOKENS).tolist()[0]
 				if len(generated_tokens) >= MAX_TOKENS:
 					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
 				output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-				prefix, correction = check_prefix(c_trg, output)
-				prefix = [2] + tokenizer(text_target=prefix).input_ids[:-1]
+				#prefix, correction = check_prefix(c_trg, output)
+				segments, wrong_words = check_segments(c_trg, output)
+				segments = [tokenizer.encode(' '.join(s)) for s in segments]
+				wrong_words = [tokenizer.encode(w)[0] for w in wrong_words]
+				constraints = []
+				for i in range(len(wrong_words)):
+					constraints.append(NegativeConstraint(segments[i], wrong_words[i], VOCAB[:wrong_words[i]] + VOCAB[(wrong_words[i]+1):]))
+				if len(segments) > len(wrong_words):
+					constraints.append(PhrasalConstraint(segments[-1]))
 
 				
-				if correction == 0:
-					if len(prefix) != len_old_prefix +1:
-						mouse_actions += 1
-				elif correction == 1:
-					if len(prefix) != len_old_prefix +1:
-						mouse_actions += 1
-					word_strokes += 1
-				elif correction == 2:
-					if len(prefix) != len_old_prefix +1:
-						mouse_actions += 2
-					word_strokes += 2
-				len_old_prefix = len(prefix)
+				mouse_actions += len(segments)
 
-				#print("ITE {0}: {1}".format(ite, output))
+				print("ITE {0}: {1}".format(ite, output))
 				ite += 1
 
 				#file_out.write("{}\n".format(output[0]))
@@ -173,18 +320,21 @@ def translate(args):
 			#print("Total Word Strokes: {}".format(word_strokes))
 			total_words += n_words
 			total_chars += n_chars
-			total_ws += word_strokes
+			#total_ws += word_strokes
 			total_ma += mouse_actions
 
 			if (i+1)%10 == 0:
-				output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
+				#output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
+				output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
 				print(output_txt)
 			#print("\n")
-			file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
+			#file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
+			file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
 			file_out.flush()
 		file_out.close()
 	except:
-		file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
+		#file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
+		file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
 		file_out.close()
 
 def check_language_code(code):
