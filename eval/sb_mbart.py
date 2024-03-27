@@ -9,9 +9,9 @@ import sys
 
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
-from transformers.generation import Constraint
 from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
                           PhrasalConstraint)
+from transformers.generation import Constraint
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
@@ -192,7 +192,7 @@ def check_prefix(target, hyp):
 	prefix += ' '
 	return prefix, correction
 
-def check_segments(target,hyp):
+def check_segments_mar(target,hyp):
 	target = tokenize(target)
 	hyp = tokenize(hyp)
 
@@ -233,6 +233,48 @@ def check_segments(target,hyp):
 		count += 1
 	return segments, wrong_words
 
+def check_segments(target,hyp):
+	target = tokenize(target)
+	hyp = tokenize(hyp)
+
+	segments = []; buffer = []
+	correction = None
+	good_segment = False
+	count = 0
+	while hyp and count < 10:
+		while target and hyp and target[0] == hyp[0]:
+			#print('LLenando:',target[0])
+			# llenar buffer y seguir inspeccionando
+			buffer.append(target[0])
+			target = target[1:]
+			hyp = hyp[1:]
+			good_segment = True
+		# ¿venimos de procesar un segmento comun? => vaciar buffer
+		if good_segment:
+			segments.append(buffer)
+			buffer = []
+			good_segment = False # ya no :(
+			# si no es el ultimo token
+			if hyp and not correction:
+				correction = hyp[0]
+			#print('Segments:',segments)
+		# siguiente token comun en la oracion objetivo
+		h = 0
+		#print('hyp:',hyp)
+		while target and hyp and target[0] != hyp[0]:
+			#print('hyp:',hyp)
+			#print('target:',target)
+			while h < len(hyp) and target[0] != hyp[h]:
+				h += 1
+			#print('h_idx:',h)
+			if h == len(hyp):
+				target = target[1:]
+				h = 0
+			else:
+				hyp = hyp[h:]
+		count += 1
+	return segments, correction
+
 def translate(args):
 	try:
 		#|========================================================
@@ -257,7 +299,7 @@ def translate(args):
 
 		total_words = 0
 		total_chars = 0
-		#total_ws = 0
+		total_ws = 0
 		total_ma = 0
 		for i in range(0, len(src_lines)):
 			#if i<1280-1:
@@ -267,7 +309,7 @@ def translate(args):
 			c_trg = ' '.join(tokenize(trg_lines[i]))
 
 			mouse_actions = 0
-			#word_strokes = 0
+			word_strokes = 0
 			n_words = len(tokenize(trg_lines[i]))
 			n_chars = len(trg_lines[i])
 
@@ -299,17 +341,13 @@ def translate(args):
 					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
 				output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 				#prefix, correction = check_prefix(c_trg, output)
-				segments, wrong_words = check_segments(c_trg, output)
+				segments, correction = check_segments(c_trg, output)
 				segments = [tokenizer.encode(' '.join(s)) for s in segments]
-				wrong_words = [tokenizer.encode(w)[0] for w in wrong_words]
-				constraints = []
-				for i in range(len(wrong_words)):
-					constraints.append(NegativeConstraint(segments[i], wrong_words[i], VOCAB[:wrong_words[i]] + VOCAB[(wrong_words[i]+1):]))
-				if len(segments) > len(wrong_words):
-					constraints.append(PhrasalConstraint(segments[-1]))
-
+				segments[0].append(tokenize.encode(correction))
+				constraints = [PhrasalConstraint(s) for s in segments]
 				
-				mouse_actions += len(segments)
+				mouse_actions += len(segments) * 2
+				word_strokes += len(correction)
 
 				print("ITE {0}: {1}".format(ite, output))
 				ite += 1
@@ -320,21 +358,21 @@ def translate(args):
 			#print("Total Word Strokes: {}".format(word_strokes))
 			total_words += n_words
 			total_chars += n_chars
-			#total_ws += word_strokes
+			total_ws += word_strokes
 			total_ma += mouse_actions
 
 			if (i+1)%10 == 0:
-				#output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
-				output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
+				output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
+				#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
 				print(output_txt)
 			#print("\n")
-			#file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
-			file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
+			file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
+			#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
 			file_out.flush()
 		file_out.close()
 	except:
-		#file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
-		file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
+		file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
+		#file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
 		file_out.close()
 
 def check_language_code(code):
