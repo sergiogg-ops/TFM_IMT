@@ -30,5 +30,20 @@ OPUS-100, (100 idiomas) -> https://paperswithcode.com/dataset/opus-100
 MTNT, (frances <-> japones) -> https://paperswithcode.com/dataset/mtnt
 
 
+INTERACTIVE MACHINE TRANSLATION
+
+Synslator, 8/9/2023 -> https://arxiv.org/abs/2310.05025
+
+IMTLab, 2023 -> https://aclanthology.org/2023.emnlp-main.922/
+
+TranSmart, 27/5/2021 -> https://arxiv.org/abs/2105.13072
+
+Microsoft, 11/2019 -> https://www.microsoft.com/en-us/research/publication/inmt-interactive-neural-machine-translation-prediction/
+
+CASMACAT, 2014 -> https://aclanthology.org/2014.eamt-1.12/
+
+TransType, 2000 -> https://aclanthology.org/W00-0507/
+
+
 
 https://huggingface.co/learn/nlp-course/chapter7/4

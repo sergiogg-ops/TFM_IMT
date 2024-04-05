@@ -161,6 +161,7 @@ def tokenize(sentence):
 	sentence = sentence.replace('´', '\'')
 	sentence = sentence.replace('\'', ' \' ')
 	sentence = sentence.replace('.', ' . ')
+	sentence = sentence.replace('-', ' - ')
 	tokens = wordTokenizer.tokenize(sentence)
 	for idx, t in enumerate(tokens):
 		t = t.replace('``', '"')
@@ -238,42 +239,81 @@ def check_segments(target,hyp):
 	hyp = tokenize(hyp)
 
 	segments = []; buffer = []
-	correction = None
+	##############################
+	# Prefijo
+	##############################
+	full_end = False
+	segments.append([])
+	while target and hyp and target[0] == hyp[0]:
+		segments[-1].append(target[0])
+		target = target[1:]
+		hyp = hyp[1:]
+		good_segment = True
+		full_end = not target
+	correction = target[0] if target else None
+	##############################
+	# Segmentos posteriores
+	##############################
+	hyp_words = {}
+	t = h = 0 # indices de target e hyp
+	t_length = len(target)
+	h_length = len(hyp)
+	for idx, w in enumerate(hyp):
+		if w not in hyp_words:
+			hyp_words[w] = [idx]
+		else:
+			hyp_words[w].append(idx)
 	good_segment = False
-	count = 0
-	while hyp and count < 10:
-		while target and hyp and target[0] == hyp[0]:
-			#print('LLenando:',target[0])
+	#count = 10
+	while t < t_length and h < h_length:# and count > 0:
+		#count -= 1
+		while t < t_length and h < h_length and target[t] == hyp[h]:
 			# llenar buffer y seguir inspeccionando
-			buffer.append(target[0])
-			target = target[1:]
-			hyp = hyp[1:]
+			buffer.append(target[t])
+			hyp_words[hyp[h]] = hyp_words.get(hyp[h], [-1])[1:]
+			t += 1
+			h += 1
 			good_segment = True
 		# ¿venimos de procesar un segmento comun? => vaciar buffer
 		if good_segment:
 			segments.append(buffer)
 			buffer = []
 			good_segment = False # ya no :(
+			full_end = t >= t_length
 			# si no es el ultimo token
-			if hyp and not correction:
-				correction = hyp[0]
+			if t < t_length and not correction:
+				correction = target[t]
 			#print('Segments:',segments)
 		# siguiente token comun en la oracion objetivo
-		h = 0
 		#print('hyp:',hyp)
-		while target and hyp and target[0] != hyp[0]:
+		while t < t_length and h < h_length and target[t] != hyp[h]:
 			#print('hyp:',hyp)
 			#print('target:',target)
-			while h < len(hyp) and target[0] != hyp[h]:
-				h += 1
+			next_h = hyp_words.get(target[t], [])
 			#print('h_idx:',h)
-			if h == len(hyp):
-				target = target[1:]
-				h = 0
+			if next_h:
+				h = next_h[0]
+				hyp_words[target[t]] = next_h[1:]
 			else:
-				hyp = hyp[h:]
-		count += 1
-	return segments, correction
+				t = t + 1
+	return segments, correction, full_end
+
+def create_constraints(segments, correction, full_end, tokenizer):
+	# prefijo
+	prefix = segments[0] + [correction]
+	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
+	segments = segments[1:]
+	# segmentos intermedios
+	tok_segments = []
+	if len(segments) > 1:
+		tok_segments += [tokenizer.encode(' '.join(s))[1:-1] for s in segments[:-1]]
+	# ultimo segmento
+	tok_segments.append(tokenizer.encode(' '.join(segments[-1]))[1:])
+	if not full_end:
+		tok_segments[-1] = tok_segments[-1][:-1] # quita eos
+	
+	constraints = [PhrasalConstraint(s) for s in tok_segments]
+	return prefix, constraints
 
 def translate(args):
 	try:
@@ -295,6 +335,11 @@ def translate(args):
 		#| PREPARE PREFIX FORCER
 		prefix = []
 		VOCAB = [*range(len(tokenizer))]
+		def restrict_prefix(batch_idx, prefix_beam):
+			pos = len(prefix_beam)
+			if pos<len(prefix):
+				return [prefix[pos]]
+			return VOCAB
 		#|========================================================
 
 		total_words = 0
@@ -325,32 +370,36 @@ def translate(args):
 			len_old_prefix = 0
 			MAX_TOKENS = 128
 			constraints = []
-			wrong_words = ['dummy']
-			while wrong_words:
-				# Generate the translation
-				if constraints:
-					generated_tokens = model.generate(**encoded_src,
-									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-									max_new_tokens=MAX_TOKENS,
-									constraints = constraints).tolist()[0]
-				else:
-					generated_tokens = model.generate(**encoded_src,
+			segments = []
+			generated_tokens = model.generate(**encoded_src,
 									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS).tolist()[0]
+			while len(segments) != 1:
+				# Generate the translation
 				if len(generated_tokens) >= MAX_TOKENS:
 					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
 				output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-				#prefix, correction = check_prefix(c_trg, output)
-				segments, correction = check_segments(c_trg, output)
-				segments = [tokenizer.encode(' '.join(s)) for s in segments]
-				segments[0].append(tokenize.encode(correction))
-				constraints = [PhrasalConstraint(s) for s in segments]
-				
-				mouse_actions += len(segments) * 2
-				word_strokes += len(correction)
 
 				print("ITE {0}: {1}".format(ite, output))
 				ite += 1
+
+				#prefix, correction = check_prefix(c_trg, output)
+				segments, correction, full_end = check_segments(c_trg, output)
+				#print(segments)
+				if len(segments) != 1:
+					prefix, constraints = create_constraints(segments, correction, full_end, tokenizer)
+
+					print('generando')
+					generated_tokens = model.generate(**encoded_src,
+									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+									max_new_tokens=MAX_TOKENS,
+									constraints = constraints,
+									prefix_allowed_tokens_fn=restrict_prefix).tolist()[0]
+					print('listo')
+
+					word_strokes += len(correction)
+				
+				mouse_actions += len(segments) * 2
 
 				#file_out.write("{}\n".format(output[0]))
 			#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
