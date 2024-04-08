@@ -250,10 +250,13 @@ def check_segments(target,hyp):
 		hyp = hyp[1:]
 		good_segment = True
 		full_end = not target
-	correction = target[0] if target else None
-	##############################
-	# Segmentos posteriores
-	##############################
+	correction = [target[0]] if target else []
+	if len(target) > 1 and target[0] == hyp[0][:len(target[0])]:
+		correction.append(target[1])
+		target = target[2:]
+	#############################
+	# Diccionario de palabra-posicion de hyp
+	#############################
 	hyp_words = {}
 	t = h = 0 # indices de target e hyp
 	t_length = len(target)
@@ -263,6 +266,9 @@ def check_segments(target,hyp):
 			hyp_words[w] = [idx]
 		else:
 			hyp_words[w].append(idx)
+	##############################
+	# Segmentos posteriores
+	##############################
 	good_segment = False
 	#count = 10
 	while t < t_length and h < h_length:# and count > 0:
@@ -281,8 +287,8 @@ def check_segments(target,hyp):
 			good_segment = False # ya no :(
 			full_end = t >= t_length
 			# si no es el ultimo token
-			if t < t_length and not correction:
-				correction = target[t]
+			#if t < t_length and not correction:
+			#	correction = target[t]
 			#print('Segments:',segments)
 		# siguiente token comun en la oracion objetivo
 		#print('hyp:',hyp)
@@ -300,7 +306,7 @@ def check_segments(target,hyp):
 
 def create_constraints(segments, correction, full_end, tokenizer):
 	# prefijo
-	prefix = segments[0] + [correction]
+	prefix = segments[0] + correction
 	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
 	segments = segments[1:]
 	# segmentos intermedios
@@ -399,7 +405,7 @@ def translate(args):
 
 					word_strokes += len(correction)
 				
-				mouse_actions += len(segments) * 2
+				mouse_actions += (len(segments)-1) * 2 + 1
 
 				#file_out.write("{}\n".format(output[0]))
 			#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
