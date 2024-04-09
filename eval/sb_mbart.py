@@ -326,9 +326,9 @@ def translate(args):
 		#|========================================================
 		#| READ SOURCE AND TARGET DATASET
 		file_name = '{0}/test.{1}'.format(args.folder, args.source)
-		src_lines = read_file(file_name)
+		src_lines = read_file(file_name)[args.initial:]
 		file_name = '{0}/test.{1}'.format(args.folder, args.target)
-		trg_lines = read_file(file_name)
+		trg_lines = read_file(file_name)[args.initial:]
 		#| PREPARE DOCUMENT TO WRITE
 		file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
 		file_out = open(file_name, 'w')
@@ -558,6 +558,7 @@ def read_parameters():
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
+	parser.add_argument("-ini","--initial", required=False, default=0, help="Initial line")
 
 	args = parser.parse_args()
 	return args
