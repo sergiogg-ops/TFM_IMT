@@ -251,7 +251,7 @@ def check_segments(target,hyp):
 		good_segment = True
 		full_end = not target
 	correction = [target[0]] if target else []
-	if len(target) > 1 and target[0] == hyp[0][:len(target[0])]:
+	if len(target)>1 and hyp and target[0] == hyp[0][:len(target[0])]:
 		correction.append(target[1])
 		target = target[2:]
 	#############################
@@ -304,131 +304,146 @@ def check_segments(target,hyp):
 				t = t + 1
 	return segments, correction, full_end
 
-def create_constraints(segments, correction, full_end, tokenizer):
+def create_constraints(segments, correction, full_end, tokenizer, min_len = 1):
 	# prefijo
 	prefix = segments[0] + correction
 	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
-	segments = segments[1:]
+	segments = [seg for seg in segments[1:] if len(seg) >  min_len]
 	# segmentos intermedios
 	tok_segments = []
 	if len(segments) > 1:
 		tok_segments += [tokenizer.encode(' '.join(s))[1:-1] for s in segments[:-1]]
 	# ultimo segmento
-	tok_segments.append(tokenizer.encode(' '.join(segments[-1]))[1:])
-	if not full_end:
-		tok_segments[-1] = tok_segments[-1][:-1] # quita eos
-	
+	elif segments:
+		tok_segments.append(tokenizer.encode(' '.join(segments[-1]))[1:])
+		if not full_end:
+			tok_segments[-1] = tok_segments[-1][:-1] # quita eos
+		
 	constraints = [PhrasalConstraint(s) for s in tok_segments]
 	return prefix, constraints
 
 def translate(args):
-	try:
-		#|========================================================
-		#| READ SOURCE AND TARGET DATASET
-		file_name = '{0}/test.{1}'.format(args.folder, args.source)
-		src_lines = read_file(file_name)[args.initial:]
-		file_name = '{0}/test.{1}'.format(args.folder, args.target)
-		trg_lines = read_file(file_name)[args.initial:]
-		#| PREPARE DOCUMENT TO WRITE
-		file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
-		file_out = open(file_name, 'w')
-		#|========================================================
-		#| LOAD MODEL AND TOKENIZER
-		model_path = args.model
-		model = MBartForConditionalGeneration.from_pretrained(model_path).to(device)
-		tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
-		#|========================================================
-		#| PREPARE PREFIX FORCER
+	#try:
+	#|========================================================
+	#| READ SOURCE AND TARGET DATASET
+	file_name = '{0}/test.{1}'.format(args.folder, args.source)
+	src_lines = read_file(file_name)
+	file_name = '{0}/test.{1}'.format(args.folder, args.target)
+	trg_lines = read_file(file_name)
+
+	#| PREPARE DOCUMENT TO WRITE
+	file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
+	file_out = open(file_name, 'w')
+	#|========================================================
+	#| LOAD MODEL AND TOKENIZER
+	model_path = args.model
+	model = MBartForConditionalGeneration.from_pretrained(model_path).to(device)
+	tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
+	#|========================================================
+	#| PREPARE PREFIX FORCER
+	prefix = []
+	VOCAB = [*range(len(tokenizer))]
+	def restrict_prefix(batch_idx, prefix_beam):
+		pos = len(prefix_beam)
+		if pos<len(prefix):
+			return [prefix[pos]]
+		return VOCAB
+	
+	#|=========================================================
+	#| GET IN THE RIGHT PLACE
+
+	total_words = 0
+	total_chars = 0
+	for line in trg_lines[:args.initial]:
+		total_words += len(tokenize(line))
+		total_chars += len(line)
+	total_ws = total_words * args.word_stroke
+	total_ma = total_chars * args.mouse_action
+	#|=========================================================
+	print(args.initial,'/',len(src_lines))
+	for i in range(args.initial, len(src_lines)):
+		#if i<1280-1:
+		#	continue
+		# Save the SRC and TRG sentences
+		c_src = src_lines[i]
+		c_trg = ' '.join(tokenize(trg_lines[i]))
+
+		mouse_actions = 0
+		word_strokes = 0
+		n_words = len(tokenize(trg_lines[i]))
+		n_chars = len(trg_lines[i])
+
+		# Convert them to ids
+		encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
+		encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
+
+		# Prints
+		print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+
+		ite = 0
 		prefix = []
-		VOCAB = [*range(len(tokenizer))]
-		def restrict_prefix(batch_idx, prefix_beam):
-			pos = len(prefix_beam)
-			if pos<len(prefix):
-				return [prefix[pos]]
-			return VOCAB
-		#|========================================================
+		len_old_prefix = 0
+		MAX_TOKENS = 128
+		constraints = []
+		segments = []
+		generated_tokens = model.generate(**encoded_src,
+								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+								max_new_tokens=MAX_TOKENS).tolist()[0]
+		while len(segments) != 1:
+			# Generate the translation
+			if len(generated_tokens) >= MAX_TOKENS:
+				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+			output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
-		total_words = 0
-		total_chars = 0
-		total_ws = 0
-		total_ma = 0
-		for i in range(0, len(src_lines)):
-			#if i<1280-1:
-			#	continue
-			# Save the SRC and TRG sentences
-			c_src = src_lines[i]
-			c_trg = ' '.join(tokenize(trg_lines[i]))
+			print("ITE {0}: {1}".format(ite, output))
+			ite += 1
 
-			mouse_actions = 0
-			word_strokes = 0
-			n_words = len(tokenize(trg_lines[i]))
-			n_chars = len(trg_lines[i])
+			#prefix, correction = check_prefix(c_trg, output)
+			segments, correction, full_end = check_segments(c_trg, output)
+			#print(segments)
+			if len(segments) != 1:
+				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer, min_len=2)
 
-			# Convert them to ids
-			encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
-			encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
-
-			# Prints
-			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
-
-			ite = 0
-			prefix = []
-			len_old_prefix = 0
-			MAX_TOKENS = 128
-			constraints = []
-			segments = []
-			generated_tokens = model.generate(**encoded_src,
-									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-									max_new_tokens=MAX_TOKENS).tolist()[0]
-			while len(segments) != 1:
-				# Generate the translation
-				if len(generated_tokens) >= MAX_TOKENS:
-					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-				output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-
-				print("ITE {0}: {1}".format(ite, output))
-				ite += 1
-
-				#prefix, correction = check_prefix(c_trg, output)
-				segments, correction, full_end = check_segments(c_trg, output)
-				#print(segments)
-				if len(segments) != 1:
-					prefix, constraints = create_constraints(segments, correction, full_end, tokenizer)
-
-					print('generando')
+				#print('generando')
+				if constraints:
 					generated_tokens = model.generate(**encoded_src,
 									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS,
 									constraints = constraints,
 									prefix_allowed_tokens_fn=restrict_prefix).tolist()[0]
-					print('listo')
+				else:
+					generated_tokens = model.generate(**encoded_src,
+									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+									max_new_tokens=MAX_TOKENS,
+									prefix_allowed_tokens_fn=restrict_prefix).tolist()[0]
+				#print('listo')
 
-					word_strokes += len(correction)
-				
-				mouse_actions += (len(segments)-1) * 2 + 1
+				word_strokes += len(correction)
+			
+			mouse_actions += (len(segments)-1) * 2 + 1
 
-				#file_out.write("{}\n".format(output[0]))
-			#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
-			#print("Total Mouse Actions: {}".format(mouse_actions))
-			#print("Total Word Strokes: {}".format(word_strokes))
-			total_words += n_words
-			total_chars += n_chars
-			total_ws += word_strokes
-			total_ma += mouse_actions
+			#file_out.write("{}\n".format(output[0]))
+		print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
+		#print("Total Mouse Actions: {}".format(mouse_actions))
+		#print("Total Word Strokes: {}".format(word_strokes))
+		total_words += n_words
+		total_chars += n_chars
+		total_ws += word_strokes
+		total_ma += mouse_actions
 
-			if (i+1)%10 == 0:
-				output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
-				#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
-				print(output_txt)
-			#print("\n")
-			file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
-			#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
-			file_out.flush()
-		file_out.close()
-	except:
-		file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
-		#file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
-		file_out.close()
+		#output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
+		#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
+		#print(output_txt)
+		#print("\n")
+		file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
+		#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
+		file_out.flush()
+	file_out.close()
+	#except:
+
+	#	file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
+	#	file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
+	#	file_out.close()
 
 def check_language_code(code):
 	if code=='ar':			# Arabic
@@ -558,7 +573,9 @@ def read_parameters():
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
-	parser.add_argument("-ini","--initial", required=False, default=0, help="Initial line")
+	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
+	parser.add_argument("-wsr","--word_stroke", required=False, default=0, type=float, help="Last word stroke ratio")
+	parser.add_argument("-mar","--mouse_action", required=False, default=0, type=float, help="Last mouse action ratio")
 
 	args = parser.parse_args()
 	return args
