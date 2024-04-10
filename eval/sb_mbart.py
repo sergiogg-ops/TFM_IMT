@@ -308,6 +308,12 @@ def create_constraints(segments, correction, full_end, tokenizer, min_len = 1):
 	# prefijo
 	prefix = segments[0] + correction
 	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
+	# eliminar signos de puntuacion del principio y final de los segmentos
+	for i in range(1,len(segments[1:])):
+		if segments[i]:
+			segments[i] = segments[i] if segments[i][-1] not in ['.',',',';',':','!','?'] else segments[i][:-1]
+		if segments[i]:
+			segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
 	segments = [seg for seg in segments[1:] if len(seg) >  min_len]
 	# segmentos intermedios
 	tok_segments = []
@@ -378,7 +384,7 @@ def translate(args):
 		encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 
 		# Prints
-		print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+		#print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
 
 		ite = 0
 		prefix = []
@@ -395,7 +401,7 @@ def translate(args):
 				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
 			output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
-			print("ITE {0}: {1}".format(ite, output))
+			#print("ITE {0}: {1}".format(ite, output))
 			ite += 1
 
 			#prefix, correction = check_prefix(c_trg, output)
