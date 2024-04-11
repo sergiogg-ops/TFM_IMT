@@ -314,7 +314,7 @@ def create_constraints(segments, correction, full_end, tokenizer, min_len = 1):
 			segments[i] = segments[i] if segments[i][-1] not in ['.',',',';',':','!','?'] else segments[i][:-1]
 		if segments[i]:
 			segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
-	segments = [seg for seg in segments[1:] if len(seg) >  min_len]
+	segments = [seg for seg in segments if len(seg) >  min_len]
 	# segmentos intermedios
 	tok_segments = []
 	if len(segments) > 1:
@@ -408,7 +408,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer, min_len=2)
+				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer, min_len=1)
 
 				#print('generando')
 				if constraints:
