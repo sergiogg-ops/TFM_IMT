@@ -304,17 +304,19 @@ def check_segments(target,hyp):
 				t = t + 1
 	return segments, correction, full_end
 
-def create_constraints(segments, correction, full_end, tokenizer, min_len = 1):
+def create_constraints(segments, correction, full_end, tokenizer, min_len = 1, del_punct = False):
 	# prefijo
 	prefix = segments[0] + correction
 	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
+	segments = segments[1:]
 	# eliminar signos de puntuacion del principio y final de los segmentos
-	for i in range(1,len(segments[1:])):
-		if segments[i]:
-			segments[i] = segments[i] if segments[i][-1] not in ['.',',',';',':','!','?'] else segments[i][:-1]
-		if segments[i]:
-			segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
-	segments = [seg for seg in segments if len(seg) >  min_len]
+	if del_punct:
+		for i in range(1,len(segments)):
+			if segments[i]:
+				segments[i] = segments[i] if segments[i][-1] not in ['.',',',';',':','!','?'] else segments[i][:-1]
+			if segments[i]:
+				segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
+	segments = [seg for seg in segments if len(seg) >=  min_len]
 	# segmentos intermedios
 	tok_segments = []
 	if len(segments) > 1:
@@ -408,7 +410,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer, min_len=1)
+				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer, min_len=3)
 
 				#print('generando')
 				if constraints:

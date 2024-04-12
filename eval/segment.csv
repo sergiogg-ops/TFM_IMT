@@ -1,3 +1,5 @@
 par,long,punt,wsr,mar
-fren,1,True,0.3325,0.6386
-fren,2,True,0.3306,0.6036
+fren,2,True,0.3325,0.6386
+fren,2,False,0.3617,0.7829
+fren,3,True,0.3306,0.6036
+fren,4,True,0.3358,0.6039
