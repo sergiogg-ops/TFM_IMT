@@ -6,6 +6,7 @@ Example of use:
 """
 import argparse
 import sys
+from math import ceil
 
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
@@ -304,19 +305,16 @@ def check_segments(target,hyp):
 				t = t + 1
 	return segments, correction, full_end
 
-def create_constraints(segments, correction, full_end, tokenizer, min_len = 1, del_punct = False):
+def create_constraints(segments, correction, full_end, tokenizer):
 	# prefijo
 	prefix = segments[0] + correction
 	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
-	segments = segments[1:]
-	# eliminar signos de puntuacion del principio y final de los segmentos
-	if del_punct:
-		for i in range(1,len(segments)):
-			if segments[i]:
-				segments[i] = segments[i] if segments[i][-1] not in ['.',',',';',':','!','?'] else segments[i][:-1]
-			if segments[i]:
-				segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
-	segments = [seg for seg in segments if len(seg) >=  min_len]
+	# filtrar segmentos no deseados
+	if segments:
+		value = ceil(0.5*len(segments))
+		segments = filter_segmens(segments[1:], filter='max_seg', value=value, del_punct=False)
+	else:
+		segments = segments[1:]
 	# segmentos intermedios
 	tok_segments = []
 	if len(segments) > 1:
@@ -330,6 +328,25 @@ def create_constraints(segments, correction, full_end, tokenizer, min_len = 1, d
 	constraints = [PhrasalConstraint(s) for s in tok_segments]
 	return prefix, constraints
 
+def filter_segmens(segments, filter='min_len', value=1, del_punct=False):
+	if filter == 'min_len':
+		segments = [seg for seg in segments if len(seg) >= value]
+	elif filter == 'max_seg':
+		if len(segments) > value:
+			segments = sorted(segments, key=lambda x: len(x))
+			segments = segments[-value:]
+	else:
+		print(f'ERROR: Tipo de filtro {filter} no implementado')
+		exit(1)
+	if del_punct:
+		for i in range(1,len(segments)):
+			if segments[i]:
+				segments[i] = segments[i] if segments[i][-1] not in ['.',',',';',':','!','?'] else segments[i][:-1]
+			if segments[i]:
+				segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
+	return segments
+
+
 def translate(args):
 	#try:
 	#|========================================================
@@ -340,7 +357,10 @@ def translate(args):
 	trg_lines = read_file(file_name)
 
 	#| PREPARE DOCUMENT TO WRITE
-	file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
+	if args.output:
+		file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
+	else:
+		file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
 	file_out = open(file_name, 'w')
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
@@ -410,7 +430,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer, min_len=3)
+				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer)
 
 				#print('generando')
 				if constraints:
@@ -581,6 +601,7 @@ def read_parameters():
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
+	parser.add_argument("-out", "--output", required=False, help="Output file")
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-wsr","--word_stroke", required=False, default=0, type=float, help="Last word stroke ratio")
 	parser.add_argument("-mar","--mouse_action", required=False, default=0, type=float, help="Last mouse action ratio")
