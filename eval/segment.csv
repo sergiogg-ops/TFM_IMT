@@ -1,7 +1,9 @@
-par,long,punt,wsr,mar
-fren,2,True,0.3325,0.6386
-fren,2,False,0.3617,0.7829
-fren,3,True,0.3306,0.6036
-fren,3,False,0.3304,0.6076  
-fren,4,True,0.3358,0.6039
-fren,5,True,0.3394,0.6069
+par,filtro,valor,punt,wsr,mar
+fren,long,2,True,0.3325,0.6386
+fren,long,2,False,0.3617,0.7829
+fren,long,3,True,0.3306,0.6036
+fren,long,3,False,0.3304,0.6076  
+fren,long,4,True,0.3358,0.6039
+fren,long,5,True,0.3394,0.6069
+fren,long,5,False,0.3385,0.6084
+fren,num,0.5,True,0.3570,0.7451

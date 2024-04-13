@@ -429,7 +429,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				maximum = ceil(len(output)*0.2)
+				maximum = ceil(len(output)*0.3)
 				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filter='max_seg', value=maximum)
 
 				#print('generando')
