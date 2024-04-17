@@ -305,13 +305,13 @@ def check_segments(target,hyp):
 				t = t + 1
 	return segments, correction, full_end
 
-def create_constraints(segments, correction, full_end, tokenizer,filter='min_len', value=1):
+def create_constraints(segments, correction, full_end, tokenizer,filters=['min_len'], values=[1]):
 	# prefijo
 	prefix = segments[0] + correction
 	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
 	# filtrar segmentos no deseados
 	if segments:
-		segments = filter_segmens(segments[1:], filter=filter, value=value, del_punct=False)
+		segments = filter_segmens(segments[1:], filters=filters, values=values, del_punct=False)
 	else:
 		segments = segments[1:]
 	# segmentos intermedios
@@ -327,16 +327,16 @@ def create_constraints(segments, correction, full_end, tokenizer,filter='min_len
 	constraints = [PhrasalConstraint(s) for s in tok_segments]
 	return prefix, constraints
 
-def filter_segmens(segments, filter='min_len', value=1, del_punct=False):
-	if filter == 'min_len':
-		segments = [seg for seg in segments if len(seg) >= value]
-	elif filter == 'max_seg':
-		if len(segments) > value:
-			segments = sorted(segments, key=lambda x: len(x))
-			segments = segments[-value:]
-	else:
-		print(f'ERROR: Tipo de filtro {filter} no implementado')
-		exit(1)
+def filter_segmens(segments, filters=['min_len'], values=[1], del_punct=False):
+	for f,v in zip(filters,values):
+		if f == 'min_len':
+			segments = [seg for seg in segments if len(seg) >= v]
+		if f == 'max_seg':
+			if len(segments) > v:
+				segments = sorted(segments, key=lambda x: len(x))
+				segments = segments[-v:]
+		if f == 'max_near':
+			segments = segments[:v]
 	if del_punct:
 		for i in range(1,len(segments)):
 			if segments[i]:
@@ -429,8 +429,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				maximum = ceil(len(output)*0.2)
-				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filter='max_seg', value=maximum)
+				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near','min_len'], values=[3,4])
 
 				#print('generando')
 				if constraints:

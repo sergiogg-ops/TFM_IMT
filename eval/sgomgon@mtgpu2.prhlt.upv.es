@@ -336,7 +336,6 @@ def filter_segmens(segments, filter='min_len', value=1, del_punct=False):
 			segments = segments[-value:]
 	else:
 		print(f'ERROR: Tipo de filtro {filter} no implementado')
-		exit(1)
 	if del_punct:
 		for i in range(1,len(segments)):
 			if segments[i]:
@@ -429,7 +428,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				maximum = ceil(len(output)*0.3)
+				maximum = ceil(len(output)*0.01)
 				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filter='max_seg', value=maximum)
 
 				#print('generando')

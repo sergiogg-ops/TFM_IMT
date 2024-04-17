@@ -6,4 +6,15 @@ fren,long,3,False,0.3304,0.6076
 fren,long,4,True,0.3358,0.6039
 fren,long,5,True,0.3394,0.6069
 fren,long,5,False,0.3385,0.6084
-fren,num,0.5,True,0.3570,0.7451
+fren,num,0.001,True,null,null
+fren,num,0.01,true,null,null
+fren,num,0.1,True,0.3618,0.7831
+fren,num,0.2,True,0.3617,0.7829
+fren,num,0.3,True,0.3617,0.7829
+fren,num,0.8,True,0.3617,0.7829
+fren,near,1,True,0.3293,0.6511
+fren,near,2,True,0.3124,0.5802
+fren,near,3,True,0.3115,0.5767
+fren,near,4,True,0.3214,0.6072
+fren,long-near,3-3,True,0.3275,0.5912
+fren,long-near,3-2,True,0.3253,0.5858
