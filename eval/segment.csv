@@ -18,3 +18,7 @@ fren,near,3,True,0.3115,0.5767
 fren,near,4,True,0.3214,0.6072
 fren,long-near,3-3,True,0.3275,0.5912
 fren,long-near,3-2,True,0.3253,0.5858
+fren,near-long,3-4,True,0.3315,0.6000
+fren,near-long,3-3,True,0.3264,0.5962
+fren,far,3,True,0.3947,0.8952
+fren,far,2,True,0.4126,0.9102

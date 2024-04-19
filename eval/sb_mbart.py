@@ -337,6 +337,8 @@ def filter_segmens(segments, filters=['min_len'], values=[1], del_punct=False):
 				segments = segments[-v:]
 		if f == 'max_near':
 			segments = segments[:v]
+		if f == 'max_far':
+			segments = segments[v:]
 	if del_punct:
 		for i in range(1,len(segments)):
 			if segments[i]:
@@ -429,7 +431,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near','min_len'], values=[3,4])
+				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_far'], values=[2])
 
 				#print('generando')
 				if constraints:
