@@ -1,131 +1,302 @@
-# Load model directly
-from argparse import ArgumentParser
+"""
+Fine Tune Mbart Model
 
-import evaluate
+Example of use:
+	> python3 imt_bart.py -src es -trg en -dir es-en
+"""
+from transformers import MBartForConditionalGeneration, MBart50TokenizerFast, M2M100ForConditionalGeneration, M2M100Tokenizer
+from transformers import Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, Seq2SeqTrainer
+from datasets import DatasetDict, load_metric
 import numpy as np
+import argparse
 import torch
-import transformers as trans
+import sys
 
-parser = ArgumentParser('Script que automatiza el fine-tunning de un modelo MBART.')
-parser.add_argument('-m','--model',choices=['mbart','mt5','bloom','llama'],required=True,help='Modelo sobre el que realizar el fine-tunning.')
-parser.add_argument('-args','--argument_file',help='Archivo yaml del que se toman los argumentos del entrenamiento.')
-parser.add_argument('-src_tr','--source_train',default='EuTrans/train/training.es',help='Archivo con el conjunto de entrenamiento en lengua origen.')
-parser.add_argument('-src_ev','--source_evaluation',default='EuTrans/dev/development.es',help='Archivo con el conjunto de evaluacion en lengua origen.')
-parser.add_argument('-tgt_tr','--target_train',default='EuTrans/train/training.en',help='Archivo con el conjunto de entrenamiento en lengua destino.')
-parser.add_argument('-tgt_ev','--target_evaluation',default='EuTrans/dev/development.en',help='Archivo con el conjunto de evaluacion en lengua destino.')
-parser.add_argument('-out_dir','--output_dir',default='mbart',help='Directorio en que se escriben las predicciones del modelo y checkpoints.')
-parser.add_argument('-a_out_dir','--overwrite_output_dir',action='store_true',default=False,help='Indica si se sobreescribe el directorio de salida.')
-parser.add_argument('-bs','--batch_size',default=32,type=int,help='Tamaño de batch.')
-parser.add_argument('-eval','--eval_strategy',default='epoch',choices=['no','epoch','steps'],help='Estrategia de evaluacion: al final de cada epoch o tras el numero de pasos especificado.')
-parser.add_argument('-eval_steps','--eval_steps',default=100,type=int,help='Numero de actualizaciones antes de la siguiente evaluacion si la estrategia de evaluacion es steps.')
-parser.add_argument('-lr','--learning_rate',default=1e-3,type=float,help='Tasa de aprendizaje.')
-parser.add_argument('-opt','--optim',default='adamw_torch',choices=['adamw_hf','adamw_torch','adamw_torch_fused','adamw_apex_fused','adamw_anyprecision',
-                                                                    'adafactor'], help='Optimizado a utilizar.')
-parser.add_argument('-weight_decay','--weight_decay',default=0,type=float,help='Weight decay del optimizador.')
-parser.add_argument('-e','--epochs',default=3,type=int,help='Numero de epocas que realiza el fine-tunning.')
-parser.add_argument('-max_steps','--max_steps',type=int,help='Numero maximo de pasos que realiza el fine-tunning. Sobreescribe el numero de epocas.')
-parser.add_argument('-save','--save_strategy',default='epoch',choices=['no','epoch','steps'],help='Estrategia de guardado de checkpoints: al final de cada epoch o tras el numero de pasos especificado.')
-parser.add_argument('-save_steps','--save_steps',default=500,type=int,help='Numero de pasos a los que hacer el guardado.')
-parser.add_argument('-save_limit','--save_total_limit',type=int,default=50,help='Numero de checkpoints a guardar. Si se supera se eliminan los mas antiguos.')
-parser.add_argument('-model_only','--save_only_model',action='store_true',default=False,help='Indica si guardar solo el modelo en los checkpoints.')
-parser.add_argument('-cpu','--use_cpu',action='store_true',default=False,help='Indica si usar la CPU en vez de CUDA.')
-parser.add_argument('-workers','--num_workers',default=0,type=int,help='Número de procesos de CPU para el dataloader.')
-parser.add_argument('-warm_start','--resume_from_checkpoint',action='store_true',default=False,help='Indica si empezar desde el modelo guardado en los checkpoints.')
-args = parser.parse_args()
+MODEL = None
+METRIC = None
+TOKENIZER = None
 
-if args.max_steps:
-    training_args = trans.Seq2SeqTrainingArguments(output_dir=args.output_dir,overwrite_output_dir=args.overwrite_output_dir,
-                                            per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size,
-                                            evaluation_strategy=args.eval_strategy,learning_rate=args.learning_rate,
-                                            weight_decay=args.weight_decay,max_steps=args.max_steps,
-                                            lr_scheduler_type='linear',
-                                            save_strategy=args.save_strategy,save_steps=args.save_steps,save_total_limit=args.save_total_limit,
-                                            save_only_model=args.save_only_model, use_cpu=args.use_cpu,eval_steps=args.eval_steps,
-                                            dataloader_num_workers=args.num_workers, load_best_model_at_end=True,
-                                            metric_for_best_model='loss',greater_is_better=False,
-                                            optim=args.optim,
-                                            resume_from_checkpoint=args.resume_from_checkpoint)
-else:
-    training_args = trans.Seq2SeqTrainingArguments(output_dir=args.output_dir,overwrite_output_dir=args.overwrite_output_dir,
-                                            per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size,
-                                            evaluation_strategy=args.eval_strategy,learning_rate=args.learning_rate,
-                                            weight_decay=args.weight_decay,num_train_epochs=args.epochs,
-                                            lr_scheduler_type='linear',
-                                            save_strategy=args.save_strategy,save_steps=args.save_steps,save_total_limit=args.save_total_limit,
-                                            save_only_model=args.save_only_model, use_cpu=args.use_cpu,eval_steps=args.eval_steps,
-                                            dataloader_num_workers=args.num_workers, load_best_model_at_end=True,
-                                            metric_for_best_model='loss',greater_is_better=False,
-                                            optim=args.optim,
-                                            resume_from_checkpoint=args.resume_from_checkpoint)
-
-if args.model == 'mbart':
-    tokenizer = trans.AutoTokenizer.from_pretrained("facebook/mbart-large-50-many-to-one-mmt")
-    model = trans.AutoModelForSeq2SeqLM.from_pretrained("facebook/mbart-large-50-many-to-one-mmt")
-elif args.model == 'mt5':
-    tokenizer = trans.AutoTokenizer.from_pretrained("google/mt5-base")
-    model = trans.AutoModelForSeq2SeqLM.from_pretrained("google/mt5-base")
-elif args.model == 'bloom':
-    tokenizer = trans.AutoTokenizer.from_pretrained("bigscience/bloom-560m")
-    model = trans.AutoModelForCausalLM.from_pretrained("bigscience/bloom-560m")
-elif args.model == 'llama':
-    tokenizer = trans.AutoTokenizer.from_pretrained("BEE-spoke-data/smol_llama-101M-GQA")
-    model = trans.AutoModelForCausalLM.from_pretrained("BEE-spoke-data/smol_llama-101M-GQA")
-
-data_collator = trans.DataCollatorForSeq2Seq(tokenizer, model=model)
-
-class Eutrans(torch.utils.data.Dataset):
-    def __init__(self, source_file, target_file):
-        self.src_lang = source_file.split('.')[-1]
-        self.tgt_lang = target_file.split('.')[-1]
-        with open(source_file,'r') as f:
-            self.source = [line for line in f]
-        with open(target_file,'r') as f:
-            self.target = [line for line in f]
+class Europarl(torch.utils.data.Dataset):
+    def __init__(self,source,target,tok):
+        self.src = []
+        with open(source,'r') as file:
+            self.src = [l for l in file]
+        self.tgt = []
+        with open(target,'r') as file:
+            self.tgt = [l for l in file]
+        self.tok = tok
     
     def __len__(self):
-        return len(self.source)
-    
-    def __getitem__(self, idx):
-        input = tokenizer(self.source[idx],text_target=self.target[idx])
-        return input
+        return len(self.src)
 
-train_data = Eutrans(args.source_train,args.target_train)
-eval_data = Eutrans(args.source_evaluation,args.target_evaluation)
+    def __getitem__(self,idx):
+        return self.tok(self.src[idx], text_target=self.tgt[idx], max_length=128, truncation=True)
 
-metric = evaluate.load('sacrebleu')
+def get_device():
+	device = "cuda:0" if torch.cuda.is_available() else "cpu"
+	return device
 
+
+def load_model(model_path, model_name, _dev=None):
+	if model_name == 'mbart':
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
+	elif model_name == 'm2m':
+		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
+	else:
+		print('Model not implemented: {0}'.format(model_name))
+		sys.exit(1)
+	return _mdl
+
+
+def load_tokenizer(tokenizer_path, args):
+	if args.model_name == 'mbart':
+		_tok = MBart50TokenizerFast.from_pretrained(tokenizer_path)
+	elif args.model_name == 'm2m':
+		_tok = M2M100Tokenizer.from_pretrained(tokenizer_path)
+	else:
+		print('Model not implemented: {0}'.format(args.model_name))
+		sys.exit(1)
+	_tok.src_lang = args.source_code
+	_tok.tgt_lang = args.target_code
+	return _tok
+
+
+def load_text(file_path):
+	with open(file_path) as file:
+		data = file.read().splitlines()
+	return data
+
+
+def preprocess_dataset(dataset):
+	inputs =  [translation['src'] for translation in dataset['translation']]
+	targets = [translation['tgt'] for translation in dataset['translation']]
+	model_inputs = TOKENIZER(inputs, text_target=targets, max_length=128, truncation=True)
+
+	return model_inputs
+
+
+def gen(shards):
+	src_data = load_text(shards[0])
+	tgt_data = load_text(shards[1])
+
+	for src_line, tgt_line in zip(src_data, tgt_data):
+		yield {"translation": {'src': src_line, 'tgt': tgt_line}}
+
+
+def load_datasets(args):
+	shards = [	f"{args.folder}tr.{args.source}", 
+				f"{args.folder}tr.{args.target}"
+				]
+	training = Europarl(shards[0],shards[1],TOKENIZER)
+
+	shards = [	f"{args.folder}dev.{args.source}",
+				f"{args.folder}dev.{args.target}"
+				]	
+	development = Europarl(shards[0],shards[1],TOKENIZER)
+
+	tokenized_dataset = DatasetDict({"train":training,"test":development})
+	return tokenized_dataset
+
+
+def postprocess_text(preds, labels):
+	preds  = [pred.strip() for pred in preds]
+	labels = [[label.strip()] for label in labels]
+
+	return preds, labels
 
 def compute_metrics(eval_preds):
-    preds, labels = eval_preds
-    # In case the model returns more than the prediction logits
-    if isinstance(preds, tuple):
-        preds = preds[0]
+	preds, labels = eval_preds
+	if isinstance(preds, tuple):
+		preds = preds[0]
+	decoded_preds = TOKENIZER.batch_decode(preds, skip_special_tokens=True)
 
-    decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+	labels = np.where(labels != -100, labels, TOKENIZER.pad_token_id)
+	decoded_labels = TOKENIZER.batch_decode(labels, skip_special_tokens = True)
 
-    # Replace -100s in the labels as we can't decode them
-    labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
-    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+	decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
 
-    # Some simple post-processing
-    decoded_preds = [pred.strip() for pred in decoded_preds]
-    decoded_labels = [[label.strip()] for label in decoded_labels]
+	result = METRIC.compute(predictions=decoded_preds, references=decoded_labels)
+	result = {"bleu": result["score"]}
 
-    result = metric.compute(predictions=decoded_preds, references=decoded_labels)
-    return {"bleu": result["score"]}
+	prediction_lens = [np.count_nonzero(pred != TOKENIZER.pad_token_id) for pred in preds]
+	result["gen_len"] = np.mean(prediction_lens)
+	result = {k: round(v,4) for k, v in result.items()}
+	return result
 
-trainer = trans.Seq2SeqTrainer(
-    model,
-    training_args,
-    train_dataset=train_data,
-    eval_dataset=eval_data,
-    data_collator=data_collator,
-    tokenizer=tokenizer,
-    compute_metrics=compute_metrics,
-)
+def check_language_code(code):
+	if code=='ar':			# Arabic
+		return 'ar_AR'
+	elif code == 'cs':		# Czech
+		return 'cs_CZ'
+	elif code == 'de':		# German
+		return 'de_DE'
+	elif code == 'en':		# English
+		return 'en_XX'
+	elif code == 'es':		# Spanish
+		return 'es_XX'
+	elif code == 'et':		# Estonian
+		return 'et_EE'
+	elif code == 'fi':		# Finnish
+		return 'fi_FI'
+	elif code == 'fr':		# French
+		return 'fr_XX'
+	elif code == 'gu':		# Gujarati
+		return 'gu_IN'
+	elif code == 'hi':		# Hindi
+		return 'hi_IN'
+	elif code == 'it':		# Italian
+		return 'it_IT'
+	elif code == 'ja':		# Japanese
+		return 'ja_XX'
+	elif code == 'kk':		# Kazakh
+		return 'kk_KZ'
+	elif code == 'ko':		# Korean
+		return 'ko_KR'
+	elif code == 'lt':		# Lithuanian
+		return 'lt_LT'
+	elif code == 'lv':		# Latvian
+		return 'lv_LV'
+	elif code == 'my':		# Burmese
+		return 'my_MM'
+	elif code == 'ne':		# Nepali
+		return 'ne_NP'
+	elif code == 'nl':		# Ducht
+		return 'nl_XX'
+	elif code == 'ro':		# Romanian
+		return 'ro_RO'
+	elif code == 'ru':		# Russian
+		return 'ru_RU'
+	elif code == 'si':		# Sinhala
+		return 'si_LK'
+	elif code == 'tr':		# Turkish
+		return 'tr_TR'
+	elif code == 'vi':		# Vietnamese
+		return 'vi_VN'
+	elif code == 'zh':		# Chinese
+		return 'zh_CN'
+	elif code == 'af':		# Afrikaans
+		return 'af_ZA'
+	elif code == 'az':		# Azerbaijani
+		return 'az_AZ'
+	elif code == 'bn':		# Bengali
+		return 'bn_IN'
+	elif code == 'fa':		# Persian
+		return 'fa_IR'
+	elif code == 'he':		# Hebrew
+		return 'he_IL'
+	elif code == 'hr':		# Croatian
+		return 'hr_HR'
+	elif code == 'id':		# Indonesian
+		return 'id_ID'
+	elif code == 'ka':		# Georgian
+		return 'ka_GE'
+	elif code == 'km':		# Khmer
+		return 'km_KH'
+	elif code == 'mk':		# Macedonian
+		return 'mk_MK'
+	elif code == 'ml':		# Malayalam
+		return 'ml_IN'
+	elif code == 'mn':		# Mongolian
+		return 'mn_MN'
+	elif code == 'mr':		# Marathi
+		return 'mr_IN'
+	elif code == 'pl':		# Polish
+		return 'pl_PL'
+	elif code == 'ps':		# Pashto
+		return 'ps_AF'
+	elif code == 'pt':		# Portuguese
+		return 'pt_XX'
+	elif code == 'sv':		# Swedish
+		return 'sv_SE'
+	elif code == 'sw':		# Swahili
+		return 'sw_KE'
+	elif code == 'ta':		# Tamil
+		return 'ta_IN'
+	elif code == 'te':		# Telegu
+		return 'te_IN'
+	elif code == 'th':		# Thai
+		return 'th_TH'
+	elif code == 'tl':		# Tagalog
+		return 'tl_XX'
+	elif code == 'uk':		# Ukrainian
+		return 'uk_UA'
+	elif code == 'ur':		# Urdu
+		return 'ur_PK'
+	elif code == 'xh':		# Xhosa
+		return 'xh_ZA'
+	elif code == 'gl':		# Galician
+		return 'gl_ES'
+	elif code == 'sl':		# Slovene
+		return 'sl_SI'
+	else:
+		print('Code not implemented')
+		sys.exit()
 
-results = trainer.evaluate()
-print('Antes de fine-tunning:\n\tLoss = ' + str(results['eval_loss']) + '\n\tBLEU = ' + str(results['eval_bleu']))
-trainer.train()
-results = trainer.evaluate()
-print('Despues de fine-tunning:\n\tLoss = ' + str(results['eval_loss']) + '\n\tBLEU = ' + str(results['eval_bleu']))
+def check_parameters(args):
+	args.source_code = check_language_code(args.source)
+	args.target_code = check_language_code(args.target)
+	return args
+
+def read_parameters():
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-src", "--source", required=True, help="Source Language")
+	parser.add_argument("-trg", "--target", required=True, help="Target Language")
+	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
+	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m'],help='Model to train')
+	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
+
+	args = parser.parse_args()
+	return args
+
+def main():
+	global TOKENIZER, METRIC, MODEL
+
+	args = read_parameters()
+	args = check_parameters(args)
+	print(args)
+
+	device = get_device()
+	METRIC = load_metric("sacrebleu")
+	MODEL = load_model("facebook/mbart-large-50-many-to-many-mmt", args.model_name, device)
+	TOKENIZER = load_tokenizer("facebook/mbart-large-50-many-to-many-mmt", args)
+
+	dataset = load_datasets(args)
+
+	training_args = Seq2SeqTrainingArguments(
+		'models/mbart_{0}'.format(args.source+args.target),
+		evaluation_strategy='steps',
+		eval_steps=10000,
+		learning_rate=2e-5,
+		per_device_train_batch_size=16,
+		per_device_eval_batch_size=16,
+		weight_decay=0.01,
+		save_total_limit=3,
+		save_steps=10000,
+		num_train_epochs=1,
+		predict_with_generate=True,
+		fp16=True,
+		)
+
+	data_collator = DataCollatorForSeq2Seq(TOKENIZER, model=MODEL)
+
+
+	trainer = Seq2SeqTrainer(
+		MODEL,
+		training_args,
+		train_dataset=dataset['train'],
+		eval_dataset=dataset['test'],
+		data_collator=data_collator,
+		tokenizer=TOKENIZER,
+		compute_metrics=compute_metrics
+		)
+	results = trainer.evaluate()
+	print(f'Antes de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
+	trainer.train()
+	results = trainer.evaluate()
+	print(f'Despues de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
+
+
+
+if __name__ == '__main__':
+	main()
+

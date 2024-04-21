@@ -431,7 +431,7 @@ def translate(args):
 			segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if len(segments) != 1:
-				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_far'], values=[2])
+				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near'], values=[3])
 
 				#print('generando')
 				if constraints:
