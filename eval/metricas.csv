@@ -5,8 +5,9 @@ mbart-ft,prefix,de,en,0.3768,0.3484,0.0567
 mbart-ft,prefix,en,de,0.3521,0.3677,0.0524
 mbart-ft,prefix,es,en,0.3747,0.3480,0.0568
 mbart-ft,prefix,en,es,0.4034,0.3510,0.0536
-mbart-ft,segment,fr,en,0.3836,0.3115,0.5767
-mbart-ft,segment,en,fr,0.4053,0.2915,0.5600
-mbart-ft,segment,de,en,0.3768,0.3186,0.6603
-mbart-ft,segment,en,de,0.3521,0.3375,0.5314
-mbart-ft,segment,es,en,0.3747,0.3143,0.6368
+mbart-ft,segment,fr,en,0.3836,0.3115,0.5767,filtro max-near-3
+mbart-ft,segment,en,fr,0.4053,0.2915,0.5600,filtro max-near-3
+mbart-ft,segment,de,en,0.3768,0.3186,0.6603,filtro max-near-3
+mbart-ft,segment,de,en,0.3768,,,filtro max-far-3 mtgpu2
+mbart-ft,segment,en,de,0.3521,0.3375,0.5314,filtro max-near-3
+mbart-ft,segment,es,en,0.3747,0.3143,0.6368,filtro max-near-3
