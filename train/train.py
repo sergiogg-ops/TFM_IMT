@@ -4,9 +4,12 @@ Fine Tune Mbart Model
 Example of use:
 	> python3 imt_bart.py -src es -trg en -dir es-en
 """
-from transformers import MBartForConditionalGeneration, MBart50TokenizerFast, M2M100ForConditionalGeneration, M2M100Tokenizer
+from transformers import MBartForConditionalGeneration, MBart50TokenizerFast
+from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers import Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, Seq2SeqTrainer
-from datasets import DatasetDict, load_metric
+from datasets import DatasetDict
+from evaluate import load
 import numpy as np
 import argparse
 import torch
@@ -37,22 +40,26 @@ def get_device():
 	return device
 
 
-def load_model(model_path, model_name, _dev=None):
+def load_model(model_name, _dev=None):
 	if model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_mdl = MBartForConditionalGeneration.from_pretrained('facebook/mbart-large-50-many-to-many-mmt').to(_dev)
 	elif model_name == 'm2m':
-		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_mdl = M2M100ForConditionalGeneration.from_pretrained("google/flan-t5-small").to(_dev)
+	elif model_name == 'flant5':
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
 	return _mdl
 
 
-def load_tokenizer(tokenizer_path, args):
+def load_tokenizer(args):
 	if args.model_name == 'mbart':
-		_tok = MBart50TokenizerFast.from_pretrained(tokenizer_path)
+		_tok = MBart50TokenizerFast.from_pretrained(f'acebook/mbart-large-50-many-to-many-mmt')
 	elif args.model_name == 'm2m':
-		_tok = M2M100Tokenizer.from_pretrained(tokenizer_path)
+		_tok = M2M100Tokenizer.from_pretrained("google/flan-t5-small")
+	elif args.model_name == 'flant5':
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -242,7 +249,7 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m'],help='Model to train')
+	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5'],help='Model to train')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
 
 	args = parser.parse_args()
@@ -256,9 +263,9 @@ def main():
 	print(args)
 
 	device = get_device()
-	METRIC = load_metric("sacrebleu")
-	MODEL = load_model("facebook/mbart-large-50-many-to-many-mmt", args.model_name, device)
-	TOKENIZER = load_tokenizer("facebook/mbart-large-50-many-to-many-mmt", args)
+	METRIC = load("sacrebleu")
+	MODEL = load_model(args.model_name, device)
+	TOKENIZER = load_tokenizer(args)
 
 	dataset = load_datasets(args)
 

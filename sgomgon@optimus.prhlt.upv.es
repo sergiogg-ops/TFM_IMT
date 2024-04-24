@@ -3,8 +3,7 @@ import sys
 
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
-import evaluate
-from tqdm import tqdm
+import datasets
 from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
                           PhrasalConstraint)
 
@@ -54,7 +53,6 @@ def check_prefix(target, hyp):
 	return prefix, correction
 
 def translate(args):
-	print('Cargando modelo...')
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
 	file_name = '{0}/test.{1}'.format(args.folder, args.source)
@@ -69,19 +67,15 @@ def translate(args):
 	#|========================================================
 	MAX_TOKENS = 128
 	hypotheses = []
-	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
-	ter_metric = evaluate.load('ter',trust_remote_code=True)
-	print('Traduciendo...')
-	progress_bar = tqdm(total=len(src_lines), desc="Traduciendo", unit="iter")
+	bleu_metric = datasets.load_metric('bleu')
+	ter_metric = datasets.load_metric('ter')
 	for src in src_lines:
 		tok_src = tokenizer(src,return_tensors='pt').to(device)
 		tok_hyp = model.generate(**tok_src,forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS).tolist()[0]
 		#hypotheses.append(tokenizer.decode(tok_hyp,skip_special_tokens=True))
 		hypotheses.append(tok_hyp)
-		progress_bar.update(1)
 	references = [tokenizer(trg,return_tensors='pt')['input_ids'].tolist() for trg in trg_lines]
-	print('Evaluando metricas...')
 	bleu_metric.add_batch(predictions=hypotheses,references=references)
 	ter_metric.add_batch(predictions=hypotheses,references=references)
 	bleu = bleu_metric.compute()

@@ -6,6 +6,8 @@ from nltk.tokenize.treebank import TreebankWordTokenizer
 import evaluate
 from tqdm import tqdm
 from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
+						  M2M100ForConditionalGeneration, M2M100Tokenizer,
+						  AutoModelForSeq2SeqLM, AutoTokenizer,
                           PhrasalConstraint)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -53,6 +55,21 @@ def check_prefix(target, hyp):
 	prefix += ' '
 	return prefix, correction
 
+def load_model(model_path, args, _dev=None):
+	if args.model_name == 'mbart':
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'm2m':
+		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'flant5':
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",src_lang=args.source_code, tgt_lang=args.target_code)
+	else:
+		print('Model not implemented: {0}'.format(args.model_name))
+		sys.exit(1)
+	return _mdl, _tok
+
 def translate(args):
 	print('Cargando modelo...')
 	#|========================================================
@@ -64,26 +81,23 @@ def translate(args):
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
-	model = MBartForConditionalGeneration.from_pretrained(model_path).to(device)
-	tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
+	model, tokenizer = load_model(model_path, args, device)
 	#|========================================================
 	MAX_TOKENS = 128
 	hypotheses = []
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
-	print('Traduciendo...')
 	progress_bar = tqdm(total=len(src_lines), desc="Traduciendo", unit="iter")
-	for src in src_lines:
-		tok_src = tokenizer(src,return_tensors='pt').to(device)
+	for i in range(len(src_lines)):
+		tok_src = tokenizer(src_lines[i],return_tensors='pt').to(device)
 		tok_hyp = model.generate(**tok_src,forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS).tolist()[0]
 		#hypotheses.append(tokenizer.decode(tok_hyp,skip_special_tokens=True))
+		bleu_metric.add(prediction=tokenizer.decode(tok_hyp,skip_special_tokens=True),reference=trg_lines[i])
+		ter_metric.add(prediction=tokenizer.decode(tok_hyp,skip_special_tokens=True),reference=trg_lines[i])
 		hypotheses.append(tok_hyp)
 		progress_bar.update(1)
-	references = [tokenizer(trg,return_tensors='pt')['input_ids'].tolist() for trg in trg_lines]
 	print('Evaluando metricas...')
-	bleu_metric.add_batch(predictions=hypotheses,references=references)
-	ter_metric.add_batch(predictions=hypotheses,references=references)
 	bleu = bleu_metric.compute()
 	ter = ter_metric.compute()
 	#print(len(hypotheses))
@@ -224,6 +238,7 @@ def read_parameters():
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
+	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5'], help="Model to load")
 
 	args = parser.parse_args()
 	return args

@@ -12,6 +12,7 @@ import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
 						  M2M100ForConditionalGeneration, M2M100Tokenizer,
+						  AutoModelForSeq2SeqLM, AutoTokenizer,
                           PhrasalConstraint)
 from transformers.generation import Constraint
 
@@ -348,6 +349,20 @@ def filter_segmens(segments, filters=['min_len'], values=[1], del_punct=False):
 				segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
 	return segments
 
+def load_model(model_path, args, _dev=None):
+	if args.model_name == 'mbart':
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'm2m':
+		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'flant5':
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",src_lang=args.source_code, tgt_lang=args.target_code)
+	else:
+		print('Model not implemented: {0}'.format(args.model_name))
+		sys.exit(1)
+	return _mdl, _tok
 
 def translate(args):
 	#try:
@@ -367,16 +382,7 @@ def translate(args):
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
-	#model = MBartForConditionalGeneration.from_pretrained(model_path).to(device)
-	if args.model_name == 'mbart':
-		model = MBartForConditionalGeneration.from_pretrained(model_path).to(device)
-		tokenizer = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
-	elif args.model_name == 'm2m':
-		model = M2M100ForConditionalGeneration.from_pretrained(model_path).to(device)
-		tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", src_lang=args.source_code, tgt_lang=args.target_code)
-	else:
-		print('Model not implemented: {0}'.format(args.model_name))
-		sys.exit(1)
+	model, tokenizer = load_model(model_path, args, device)
 	#|========================================================
 	#| PREPARE PREFIX FORCER
 	prefix = []
