@@ -7,151 +7,158 @@ Example of use:
 import argparse
 import sys
 from math import ceil
+import numpy as np
 
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
-from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
-						  M2M100ForConditionalGeneration, M2M100Tokenizer,
-						  AutoModelForSeq2SeqLM, AutoTokenizer,
+from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
+                          M2M100ForConditionalGeneration, M2M100Tokenizer,
+                          MBart50TokenizerFast, MBartForConditionalGeneration,
                           PhrasalConstraint)
 from transformers.generation import Constraint
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
 
-class NegativeConstraint(Constraint):
-	r"""Abstract base class for all constraints that can be applied during generation.
-	It must define how the constraint can be satisfied.
+class Restrictor():
+	def __init__(self,vocab, tokenizer, target, filters = [], values = []):
+		self.vocab = vocab
+		self.tokenizer = tokenizer
+		self.prefix = []	
+		self.segments = []
+		self.prev_tseg = np.zeros(len(target)+1,dtype=int)
+		self.filters = filters
+		self.values = values
 
-	All classes that inherit Constraint must follow the requirement that
+	def create_constraints(self, full_end, filters=['min_len'], values=[1]):
+		#print('Prefijo:',self.prefix)
+		#print('Segmentos:',self.segments)
+		#print('Full End:',full_end)
+		# segmentos intermedios
+		tok_segments = []
+		if len(self.segments) > 1:
+			#tok_segments += [self.tokenizer.encode(' '.join(s))[1:-1] for s in self.segments[:-1]]
+			tok_segments += [self.tokenizer.encode(s)[1:-1] for s in self.segments[:-1]]
+		# ultimo segmento
+		if self.segments:
+			#tok_segments.append(self.tokenizer.encode(' '.join(self.segments[-1]))[1:])
+			tok_segments.append(self.tokenizer.encode(self.segments[-1])[1:])
+			if not full_end:
+				tok_segments[-1] = tok_segments[-1][:-1] # quita eos
+			
+		constraints = [PhrasalConstraint(s) for s in tok_segments]
+		return constraints
+	
+	def restrict_prefix(self,batch_idx, prefix_beam):
+		pos = len(prefix_beam)
+		if pos<len(self.tok_prefix):
+			return [self.tok_prefix[pos]]
+		return self.vocab
 
-	```py
-	completed = False
-	while not completed:
-		_, completed = constraint.update(constraint.advance())
-	```
+	def check_segments(self,tgt,hyp):
+		'''
+		Encuentra los segmentos comunes entre dos cadenas de texto
 
-	will always terminate (halt).
-	"""
+		Parameters:
+			tgt (str): Cadena de texto 1 (target)
+			hyp (str): Cadena de texto 2 (hypothesis)
+		
+		Returns:
+			mouse_actions (int): numero de nuevos segmentos encontrados
+			len(correction) (int): numero de palabras que se han usado para extender el prefijo
+			all_right (bool): la hipotesis es correcta o no
+			full_end (bool): el ultimo segmento acaba con la oracion objetivo o no
+		'''
+		tgt = tokenize(tgt)
+		hyp = tokenize(hyp)
 
-	def __init__(self, segment, wrong_word, rest_vocab):
-		self.first = segment
-		self.second = wrong_word
-		self.rest_vocab = rest_vocab
-		self.seen_first = False
-		self.progress = 0
-		self.seqlen = len(segment) + 1
-		# test for the above condition
-		#self.test()
+		lent, lenh = len(tgt), len(hyp)
+		#dp = np.zeros((lent+1,lenh+1),dtype=int)
+		t_seg = np.zeros(lent+1,dtype=int) # +1 simboliza el final
+		# Calcular matriz de cruces
+		for i in range(lent):
+			j = 0
+			while j < lenh and tgt[i] != hyp[j]:
+				j += 1
+			t_seg[i] = j < lenh
+		
+		#print('Validado:',self.prev_tseg)
+		#print('Nuevo:   ',t_seg)
+		# Calcular acciones a partir de los segmentos nuevos/antiguos
+		self.prefix = ''
+		i = 0
+		while i < lent and t_seg[i] == 1:
+			self.prefix += tgt[i] + ' '
+			i += 1
+		num_corrections = 0
+		if i < lent:
+			self.prefix += tgt[i] + ' '
+			i += 1
+			num_corrections += 1
+		if i < lent and tgt[i-1] == hyp[i-1][:len(tgt[i-1])]:
+			self.prefix += tgt[i] + ' '
+			i += 1
+			num_corrections += 1
+		self.tok_prefix = [2] + self.tokenizer(text_target=self.prefix).input_ids[:-1]
+		#print('Prefijo:',self.prefix)
+		t_seg[i:] = self.filter_segments(t_seg[i:])
 
-	def test(self):
-		"""
-		Tests whether this constraint has been properly defined.
-		"""
-		counter = 0
-		completed = False
-		while not completed:
-			if counter == 1:
-				self.reset()
-			advance = self.advance()
-			if not self.does_advance(advance):
-				raise Exception(
-					"Custom Constraint is not defined correctly. self.does_advance(self.advance()) must be true."
-				)
+		self.segments = ['']
+		mouse_actions = 2 if i > 0 else 1 # prefijo (1 o mas palabras), las correcciones se cuentan al final
+		first_tok = i-1
+		#print(i,'/',lent)
+		for j in range(i,lent+1):
+			if t_seg[j] - self.prev_tseg[j] != t_seg[j-1] - self.prev_tseg[j-1]:
+				mouse_actions += 2 if j - first_tok > 1 else 1
+			if t_seg[j-1] == 0 and t_seg[j] == 1:
+				first_tok = i
+				self.segments.append(tgt[j])
+			elif t_seg[j] == 1:
+				self.segments[-1] += ' ' + tgt[j]
+		if self.segments[0] == '':
+			self.segments = self.segments[1:]
 
-			stepped, completed, reset = self.update(advance)
-			counter += 1
+		self.prev_tseg = t_seg
+		#print('Actions:',mouse_actions)
+		# utilizo la lista segments para asegurarme de que el ultimo segmento introducido es
+		# el que potencialmente acaba con target (tgt)
+		return mouse_actions, num_corrections, t_seg[-1], i == lent
 
-			if counter > 10000:
-				raise Exception("update() does not fulfill the constraint.")
+	def filter_segments(self, mask):
+		for f,v in zip(self.filters,self.values):
+			if f == 'min_len':
+				mask = self.min_len_filter(mask, v)
+			if f == 'max_near':
+				mask = self.max_near_filter(mask, v)
+			if f == 'max_far':
+				mask = self.max_far_filter(mask, v)
+		return mask
+	
+	def min_len_filter(self, mask, min_len):
+		ini_seg = 0
+		for i in range(1,mask.shape[0]):
+			if mask[i] == 0:
+				if i - ini_seg < min_len:
+					mask[ini_seg:i] = 0
+			elif mask[i-1] == 0 and mask[i] == 1:
+				ini_seg = i
+		return mask
+	
+	def max_near_filter(self, mask, num):
+		i = 1
+		while i < mask.shape[0] and num > 0:
+			i += 1
+			num -= mask[i-1] == 1 and mask[i] == 0
+		mask[i:] = 0
+		return mask
 
-		if self.remaining() != 0:
-			raise Exception("Custom Constraint is not defined correctly.")
-
-	def advance(self):
-		"""
-		When called, returns the token that would take this constraint one step closer to being fulfilled.
-
-		Return:
-			token_ids(`torch.tensor`): Must be a tensor of a list of indexable tokens, not some integer.
-		"""
-		if self.seen_first:
-			return self.rest_vocab
-		else:
-			return self.first[self.progress]
-
-	def does_advance(self, token_id: int):
-		"""
-		Reads in a token and returns whether it creates progress.
-		"""
-		if self.seen_first:
-			return bool(token_id != self.second)
-		else:
-			return self.first[self.progress] == token_id
-
-	def update(self, token_id: int):
-		"""
-		Reads in a token and returns booleans that indicate the progress made by it. This function will update the
-		state of this object unlikes `does_advance(self, token_id: int)`.
-
-		This isn't to test whether a certain token will advance the progress; it's to update its state as if it has
-		been generated. This becomes important if token_id != desired token (refer to else statement in
-		PhrasalConstraint)
-
-		Args:
-			token_id(`int`):
-				The id of a newly generated token in the beam search.
-		Return:
-			stepped(`bool`):
-				Whether this constraint has become one step closer to being fulfuilled.
-			completed(`bool`):
-				Whether this constraint has been completely fulfilled by this token being generated.
-			reset (`bool`):
-				Whether this constraint has reset its progress by this token being generated.
-		"""
-		if isinstance(token_id, torch.Tensor):
-			print('Ayuda')
-		if self.progress < len(self.first) and self.first[self.progress] == token_id:
-			self.progress += 1
-			if self.progress == len(self.first):
-				self.seen_first = True
-			return True, False, False
-		elif self.seen_first:
-			fulfilled = token_id != self.second
-			self.progress += fulfilled
-			return fulfilled, fulfilled, not fulfilled
-		else:
-			return False, False, False
-
-	def reset(self):
-		"""
-		Resets the state of this constraint to its initialization. We would call this in cases where the fulfillment of
-		a constraint is abrupted by an unwanted token.
-		"""
-		self.seen_first = False
-		self.progress = 0
-
-	def remaining(self):
-		"""
-		Returns the number of remaining steps of `advance()` in order to complete this constraint.
-		"""
-		return self.seqlen - self.progress
-
-	def copy(self, stateful=False):
-		"""
-		Creates a new instance of this constraint.
-
-		Args:
-			stateful(`bool`): Whether to not only copy the constraint for new instance, but also its state.
-
-		Return:
-			constraint(`Constraint`): The same constraint as the one being called from.
-		"""
-		nueva = NegativeConstraint(self.first, self.second, self.rest_vocab)
-		if stateful:
-			nueva.seen_first = self.seen_first
-			nueva.progress = self.progress
-		return nueva
+	def max_far_filter(self, mask, num):
+		i = mask.shape[0]-2
+		while i >= 0 and num > 0:
+			i -= 1
+			num -= mask[i] == 1 and mask[i+1] == 0
+		mask[:i+1] = 0
+		return mask
 
 def read_file(name):
 	file_r = open(name, 'r')
@@ -171,165 +178,7 @@ def tokenize(sentence):
 		tokens[idx] = t
 	return tokens
 
-def check_prefix(target, hyp):
-	prefix = []
-	correction = 0
-
-	target = tokenize(target)
-	hyp = tokenize(hyp)
-
-	for i in range(len(target)):
-		if len(hyp)<=i:
-			correction = 1
-			prefix.append(target[i])
-			break
-		elif target[i] == hyp[i]:
-			prefix.append(target[i])
-		else:
-			correction = 1
-			prefix.append(target[i])
-			if target[i] == hyp[i][:len(target[i])] and len(target)>i+1:
-				correction = 2
-				prefix.append(target[i+1])
-			break
-	prefix = ' '.join(prefix)
-	prefix += ' '
-	return prefix, correction
-
-def check_segments_mar(target,hyp):
-	target = tokenize(target)
-	hyp = tokenize(hyp)
-
-	segments = []; wrong_words = []; buffer = []
-	good_segment = False
-	count = 0
-	while hyp and count < 10:
-		while target and hyp and target[0] == hyp[0]:
-			#print('LLenando:',target[0])
-			# llenar buffer y seguir inspeccionando
-			buffer.append(target[0])
-			target = target[1:]
-			hyp = hyp[1:]
-			good_segment = True
-		# ¿venimos de procesar un segmento comun? => vaciar buffer
-		if good_segment:
-			segments.append(buffer)
-			buffer = []
-			good_segment = False # ya no :(
-			# si no es el ultimo token
-			if hyp:
-				wrong_words.append(hyp[0])
-			#print('Segments:',segments)
-		# siguiente token comun en la oracion objetivo
-		h = 0
-		#print('hyp:',hyp)
-		while target and hyp and target[0] != hyp[0]:
-			#print('hyp:',hyp)
-			#print('target:',target)
-			while h < len(hyp) and target[0] != hyp[h]:
-				h += 1
-			#print('h_idx:',h)
-			if h == len(hyp):
-				target = target[1:]
-				h = 0
-			else:
-				hyp = hyp[h:]
-		count += 1
-	return segments, wrong_words
-
-def check_segments(target,hyp):
-	target = tokenize(target)
-	hyp = tokenize(hyp)
-
-	segments = []; buffer = []
-	##############################
-	# Prefijo
-	##############################
-	full_end = False
-	segments.append([])
-	while target and hyp and target[0] == hyp[0]:
-		segments[-1].append(target[0])
-		target = target[1:]
-		hyp = hyp[1:]
-		good_segment = True
-		full_end = not target
-	correction = [target[0]] if target else []
-	if len(target)>1 and hyp and target[0] == hyp[0][:len(target[0])]:
-		correction.append(target[1])
-		target = target[2:]
-	#############################
-	# Diccionario de palabra-posicion de hyp
-	#############################
-	hyp_words = {}
-	t = h = 0 # indices de target e hyp
-	t_length = len(target)
-	h_length = len(hyp)
-	for idx, w in enumerate(hyp):
-		if w not in hyp_words:
-			hyp_words[w] = [idx]
-		else:
-			hyp_words[w].append(idx)
-	##############################
-	# Segmentos posteriores
-	##############################
-	good_segment = False
-	#count = 10
-	while t < t_length and h < h_length:# and count > 0:
-		#count -= 1
-		while t < t_length and h < h_length and target[t] == hyp[h]:
-			# llenar buffer y seguir inspeccionando
-			buffer.append(target[t])
-			hyp_words[hyp[h]] = hyp_words.get(hyp[h], [-1])[1:]
-			t += 1
-			h += 1
-			good_segment = True
-		# ¿venimos de procesar un segmento comun? => vaciar buffer
-		if good_segment:
-			segments.append(buffer)
-			buffer = []
-			good_segment = False # ya no :(
-			full_end = t >= t_length
-			# si no es el ultimo token
-			#if t < t_length and not correction:
-			#	correction = target[t]
-			#print('Segments:',segments)
-		# siguiente token comun en la oracion objetivo
-		#print('hyp:',hyp)
-		while t < t_length and h < h_length and target[t] != hyp[h]:
-			#print('hyp:',hyp)
-			#print('target:',target)
-			next_h = hyp_words.get(target[t], [])
-			#print('h_idx:',h)
-			if next_h:
-				h = next_h[0]
-				hyp_words[target[t]] = next_h[1:]
-			else:
-				t = t + 1
-	return segments, correction, full_end
-
-def create_constraints(segments, correction, full_end, tokenizer,filters=['min_len'], values=[1]):
-	# prefijo
-	prefix = segments[0] + correction
-	prefix = [2] + tokenizer(text_target=' '.join(prefix)).input_ids[:-1]
-	# filtrar segmentos no deseados
-	if segments:
-		segments = filter_segmens(segments[1:], filters=filters, values=values, del_punct=False)
-	else:
-		segments = segments[1:]
-	# segmentos intermedios
-	tok_segments = []
-	if len(segments) > 1:
-		tok_segments += [tokenizer.encode(' '.join(s))[1:-1] for s in segments[:-1]]
-	# ultimo segmento
-	elif segments:
-		tok_segments.append(tokenizer.encode(' '.join(segments[-1]))[1:])
-		if not full_end:
-			tok_segments[-1] = tok_segments[-1][:-1] # quita eos
-		
-	constraints = [PhrasalConstraint(s) for s in tok_segments]
-	return prefix, constraints
-
-def filter_segmens(segments, filters=['min_len'], values=[1], del_punct=False):
+def filter_segments(segments, filters=['min_len'], values=[1], del_punct=False):
 	for f,v in zip(filters,values):
 		if f == 'min_len':
 			segments = [seg for seg in segments if len(seg) >= v]
@@ -379,19 +228,14 @@ def translate(args):
 	else:
 		file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
 	file_out = open(file_name, 'w')
+	file_out.write(args)
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
 	model, tokenizer = load_model(model_path, args, device)
-	#|========================================================
-	#| PREPARE PREFIX FORCER
-	prefix = []
+	#|=========================================================
+	#| PREPARE THE RESTRICTOR
 	VOCAB = [*range(len(tokenizer))]
-	def restrict_prefix(batch_idx, prefix_beam):
-		pos = len(prefix_beam)
-		if pos<len(prefix):
-			return [prefix[pos]]
-		return VOCAB
 	
 	#|=========================================================
 	#| GET IN THE RIGHT PLACE
@@ -419,21 +263,19 @@ def translate(args):
 
 		# Convert them to ids
 		encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
-		encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
+		#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 
 		# Prints
 		#print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
 
 		ite = 0
-		prefix = []
-		len_old_prefix = 0
 		MAX_TOKENS = 128
-		constraints = []
-		segments = []
+		restrictor = Restrictor(VOCAB,tokenizer,c_trg,filters=args.filters,values=args.values)
+		ended = False
 		generated_tokens = model.generate(**encoded_src,
 								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 								max_new_tokens=MAX_TOKENS).tolist()[0]
-		while len(segments) != 1:
+		while not ended:
 			# Generate the translation
 			if len(generated_tokens) >= MAX_TOKENS:
 				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
@@ -443,10 +285,12 @@ def translate(args):
 			ite += 1
 
 			#prefix, correction = check_prefix(c_trg, output)
-			segments, correction, full_end = check_segments(c_trg, output)
+			actions, corrections, full_end, ended = restrictor.check_segments2(c_trg, output)
+			#segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
-			if len(segments) != 1:
-				prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near'], values=[3])
+			if not ended:
+				#prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near'], values=[3])
+				constraints = restrictor.create_constraints(full_end, filters=[], values=[])
 
 				#print('generando')
 				if constraints:
@@ -454,30 +298,30 @@ def translate(args):
 									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS,
 									constraints = constraints,
-									prefix_allowed_tokens_fn=restrict_prefix).tolist()[0]
+									prefix_allowed_tokens_fn=restrictor.restrict_prefix).tolist()[0]
 				else:
 					generated_tokens = model.generate(**encoded_src,
 									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS,
-									prefix_allowed_tokens_fn=restrict_prefix).tolist()[0]
+									prefix_allowed_tokens_fn=restrictor.restrict_prefix).tolist()[0]
 				#print('listo')
 
-				word_strokes += len(correction)
-			
-			mouse_actions += (len(segments)-1) * 2 + 1
+			word_strokes += corrections
+			mouse_actions += corrections + actions + 1
 
 			#file_out.write("{}\n".format(output[0]))
-		print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
-		#print("Total Mouse Actions: {}".format(mouse_actions))
-		#print("Total Word Strokes: {}".format(word_strokes))
 		total_words += n_words
 		total_chars += n_chars
 		total_ws += word_strokes
 		total_ma += mouse_actions
+		
+		#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
+		#print("Total Mouse Actions: {}".format(mouse_actions))
+		#print("Total Word Strokes: {}".format(word_strokes))
 
-		#output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
+		output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
 		#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
-		#print(output_txt)
+		print(output_txt)
 		#print("\n")
 		file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
 		#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
@@ -618,9 +462,12 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-out", "--output", required=False, help="Output file")
+	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5'], help='Model name')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-wsr","--word_stroke", required=False, default=0, type=float, help="Last word stroke ratio")
 	parser.add_argument("-mar","--mouse_action", required=False, default=0, type=float, help="Last mouse action ratio")
+	parser.add_argument("-f","--filters", required=False, nargs='+', default=[],choices=['min_len','max_near','max_far'], help="Filters to apply to the segments")
+	parser.add_argument("-v","--values", required=False, nargs='+', default=[], type=int, help="Values for the filters")
 
 	args = parser.parse_args()
 	return args

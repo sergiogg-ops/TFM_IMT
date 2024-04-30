@@ -259,7 +259,7 @@ def main():
 		weight_decay=0.01,
 		save_total_limit=3,
 		save_steps=10000,
-		num_train_epochs=1,
+		num_train_epochs=3,
 		predict_with_generate=True,
 		fp16=True,
 		)

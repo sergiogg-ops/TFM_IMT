@@ -270,7 +270,7 @@ def main():
 	dataset = load_datasets(args)
 
 	training_args = Seq2SeqTrainingArguments(
-		'models/mbart_{0}'.format(args.source+args.target),
+		'models/{0}_{1}'.format(args.model_name,args.source+args.target),
 		evaluation_strategy='steps',
 		eval_steps=10000,
 		learning_rate=2e-5,
@@ -279,7 +279,7 @@ def main():
 		weight_decay=0.01,
 		save_total_limit=3,
 		save_steps=10000,
-		num_train_epochs=1,
+		num_train_epochs=3,
 		predict_with_generate=True,
 		fp16=True,
 		)
