@@ -7,8 +7,8 @@ Example of use:
 import argparse
 import sys
 from math import ceil
-import numpy as np
 
+import numpy as np
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
@@ -31,8 +31,8 @@ class Restrictor():
 		self.values = values
 
 	def create_constraints(self, full_end, filters=['min_len'], values=[1]):
-		#print('Prefijo:',self.prefix)
-		#print('Segmentos:',self.segments)
+		print('Prefijo:',self.prefix)
+		print('Segmentos:',self.segments)
 		#print('Full End:',full_end)
 		# segmentos intermedios
 		tok_segments = []
@@ -82,8 +82,8 @@ class Restrictor():
 				j += 1
 			t_seg[i] = j < lenh
 		
-		#print('Validado:',self.prev_tseg)
-		#print('Nuevo:   ',t_seg)
+		print('Validado:',self.prev_tseg)
+		print('Nuevo:   ',t_seg)
 		# Calcular acciones a partir de los segmentos nuevos/antiguos
 		self.prefix = ''
 		i = 0
@@ -104,22 +104,25 @@ class Restrictor():
 		t_seg[i:] = self.filter_segments(t_seg[i:])
 
 		self.segments = ['']
-		mouse_actions = 2 if i > 0 else 1 # prefijo (1 o mas palabras), las correcciones se cuentan al final
+		mouse_actions = min(2,i-1) # prefijo (1 o mas palabras), las correcciones se cuentan al final
 		first_tok = i-1
 		#print(i,'/',lent)
 		for j in range(i,lent+1):
-			if t_seg[j] - self.prev_tseg[j] != t_seg[j-1] - self.prev_tseg[j-1]:
-				mouse_actions += 2 if j - first_tok > 1 else 1
+			#if t_seg[j] - self.prev_tseg[j] != t_seg[j-1] - self.prev_tseg[j-1]:
+			#	mouse_actions += 2 if j - first_tok > 1 else 1
 			if t_seg[j-1] == 0 and t_seg[j] == 1:
-				first_tok = i
+				first_tok = j
 				self.segments.append(tgt[j])
 			elif t_seg[j] == 1:
 				self.segments[-1] += ' ' + tgt[j]
+			elif t_seg[j-1] == 1 and t_seg[j] == 0 and np.sum(t_seg[first_tok:j]) != np.sum(self.prev_tseg[first_tok:j]):
+				#print(first_tok,j)
+				mouse_actions += 2 if j - first_tok > 1 else 1
 		if self.segments[0] == '':
 			self.segments = self.segments[1:]
 
 		self.prev_tseg = t_seg
-		#print('Actions:',mouse_actions)
+		print('Actions:',mouse_actions)
 		# utilizo la lista segments para asegurarme de que el ultimo segmento introducido es
 		# el que potencialmente acaba con target (tgt)
 		return mouse_actions, num_corrections, t_seg[-1], i == lent
@@ -228,7 +231,7 @@ def translate(args):
 	else:
 		file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
 	file_out = open(file_name, 'w')
-	file_out.write(args)
+	file_out.write(str(args))
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
@@ -266,7 +269,7 @@ def translate(args):
 		#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 
 		# Prints
-		#print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+		print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
 
 		ite = 0
 		MAX_TOKENS = 128
@@ -281,11 +284,11 @@ def translate(args):
 				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
 			output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
-			#print("ITE {0}: {1}".format(ite, output))
+			print("ITE {0}: {1}".format(ite, output))
 			ite += 1
 
 			#prefix, correction = check_prefix(c_trg, output)
-			actions, corrections, full_end, ended = restrictor.check_segments2(c_trg, output)
+			actions, corrections, full_end, ended = restrictor.check_segments(c_trg, output)
 			#segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			if not ended:
@@ -307,7 +310,9 @@ def translate(args):
 				#print('listo')
 
 			word_strokes += corrections
+			print('Word strokes:',corrections)
 			mouse_actions += corrections + actions + 1
+			print('Mouse actions:',corrections + actions + 1)
 
 			#file_out.write("{}\n".format(output[0]))
 		total_words += n_words

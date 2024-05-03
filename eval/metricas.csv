@@ -6,6 +6,9 @@ mbart-ft,prefix,en,de,0.3521,0.6472,0.3677,0.0524,
 mbart-ft,prefix,es,en,0.3747,0.6024,0.3480,0.0568,
 mbart-ft,prefix,en,es,0.4034,0.5857,0.3510,0.0536,
 mbart-ft,segment,fr,en,0.3836,0.5725,0.3115,0.5767,filtro max-near-3
+mbart-ft,segmentv2,fr,en,0.3836,0.5725,0.2383,0.4531,
+mbart-ft,segmentv2,fr,en,0.3836,0.5725,0.2362,0.3871,filtro max-near-3
+mbart-ft,segmentv3,fr,en,0.3836,0.5725,0.2384,28.75,
 mbart-ft,segment,en,fr,0.4053,0.5833,0.2915,0.5600,filtro max-near-3
 mbart-ft,segment,de,en,0.3768,0.5964,0.3186,0.6603,filtro max-near-3       
 mbart-ft,segment,en,de,0.3521,0.6472,0.3375,0.5314,filtro max-near-3
