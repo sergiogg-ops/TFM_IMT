@@ -31,13 +31,15 @@ class Restrictor():
 		self.filters = filters
 		self.values = values
 
-	def create_constraints(self, full_end, filters=['min_len'], values=[1]):
-		if self.prefix:
-			print('Segmentos:',[self.prefix] + self.segments)
-		else:
-			print('Segmentos:',self.segments)
-		print('Correcciones:',self.correction)
-		self.segments.append(self.correction)
+	def create_constraints(self, full_end, filters=['min_len'], values=[1], verbose=False):
+
+		if verbose:
+			if self.prefix:
+				print('Segmentos:',[self.prefix] + self.segments)
+			else:
+				print('Segmentos:',self.segments)
+			print('Correcciones:',self.correction)
+		self.segments = [self.correction] + self.segments
 		#print('Full End:',full_end)
 		# segmentos intermedios
 		tok_segments = []
@@ -133,7 +135,7 @@ class Restrictor():
 		# el que potencialmente acaba con target (tgt)
 		return mouse_actions, num_corrections, t_seg[-1], i == lent
 	
-	def check_segments2(self,tgt,hyp):
+	def check_segments2(self,tgt,hyp,verbose=False):
 		'''
 		Encuentra los segmentos comunes entre dos cadenas de texto
 
@@ -163,17 +165,20 @@ class Restrictor():
 			idx = np.argmax(dp[i+1,:]) 
 			length = dp[i+1,idx]
 			t_seg[(i-length+1):i+1] = np.arange(idx-length,idx) if length > 0 else -1
-		print('Validado:',self.prev_tseg)
-		print('Nuevo:   ',t_seg)
+		if verbose:
+			print('Validado:',self.prev_tseg)
+			print('Nuevo:   ',t_seg)
 
 		# Calcular acciones de nuevos segmentos
 		self.prefix = ''
+		used_tok = set()
 		mouse_actions = 0
 		i = 0
 		while i < lent and t_seg[i] != -1:
 			if t_seg[i] != t_seg[i-1]+1:
 				mouse_actions += 1 #union de segmentos
 			self.prefix += tgt[i] + ' '
+			used_tok.add(t_seg[i])
 			i += 1
 		if mouse_actions > 0:
 			mouse_actions += 1 # union de segmentos
@@ -192,32 +197,35 @@ class Restrictor():
 		
 		mouse_actions += num_corrections
 		self.tok_prefix = [2] + self.tokenizer(text_target=self.prefix).input_ids[:-1]
-		#print('Prefijo:',self.prefix)
 		t_seg[i:] = self.filter_segments(t_seg[i:])
 
 		first_tok = i-1
-		self.segments = []
-		#print(i,'/',lent)
+		self.segments = ['']
 		for j in range(i,lent+1):
-			# token validado
-			if t_seg[j] !=-1:
-				# Inicio absoluto de segmento
-				if t_seg[j-1] == -1:
-					self.segments.append('')
+			if not t_seg[j] in used_tok:
+				# token validado
+				if t_seg[j] !=-1:
+					# Inicio absoluto de segmento
+					if t_seg[j-1] == -1:
+						self.segments.append('')
+						first_tok = j
+					self.segments[-1] += tgt[j] + ' '
+					used_tok.add(t_seg[j])
+				# acciones de raton
+				if t_seg[j-1] != -1 and t_seg[j-1] + 1 != t_seg[j]:
+					# ¿segmento nuevo?
+					if np.sum(t_seg[first_tok:j] != -1) != np.sum(self.prev_tseg[first_tok:j] != -1):
+						mouse_actions += 2 if j - first_tok > 1 else 1
+					# ¿punto de union de segmentos?
+					if t_seg[j] != -1:
+						mouse_actions += 2
 					first_tok = j
-				self.segments[-1] += tgt[j] + ' '
-			# acciones de raton
-			if t_seg[j-1] != -1 and t_seg[j-1] + 1 != t_seg[j]:
-				# ¿segmento nuevo?
-				if np.sum(t_seg[first_tok:j] != -1) != np.sum(self.prev_tseg[first_tok:j] != -1):
-					mouse_actions += 2 if j - first_tok > 1 else 1
-				# ¿punto de union de segmentos?
-				if t_seg[j] != -1:
-					mouse_actions += 2
-				first_tok = j
+		if self.segments and self.segments[0] == '':
+			self.segments = self.segments[1:]
 		
 		self.prev_tseg = t_seg
-		print('Actions:',mouse_actions)
+		if verbose:
+			print('Actions:',mouse_actions)
 		return mouse_actions, num_corrections, t_seg[-1], i == lent
 
 	def filter_segments(self, mask):
@@ -362,7 +370,8 @@ def translate(args):
 		#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 
 		# Prints
-		#print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+		if args.verbose:
+			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
 
 		ite = 0
 		MAX_TOKENS = 128
@@ -371,27 +380,26 @@ def translate(args):
 		generated_tokens = model.generate(**encoded_src,
 								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 								max_new_tokens=MAX_TOKENS).tolist()[0]
+		if len(generated_tokens) >= MAX_TOKENS:
+			MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+		output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+		if args.verbose:
+			print("ITE {0}: {1}".format(ite, output))
 		while not ended:
 			# Generate the translation
-			if len(generated_tokens) >= MAX_TOKENS:
-				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-			output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-
-			#print("ITE {0}: {1}".format(ite, output))
 			ite += 1
 
 			#prefix, correction = check_prefix(c_trg, output)
-			actions, corrections, full_end, ended = restrictor.check_segments2(c_trg, output)
+			actions, corrections, full_end, ended = restrictor.check_segments2(c_trg, output,verbose=args.verbose)
 			#segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			word_strokes += corrections
-			#print('Word strokes:',corrections)
 			mouse_actions += actions + 1
-			#print('Mouse actions:',actions + 1)
 
 			if not ended:
 				#prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near'], values=[3])
-				constraints = restrictor.create_constraints(full_end, filters=[], values=[])
+				constraints = restrictor.create_constraints(full_end, filters=[], values=[],verbose=args.verbose)
 
 				#print('generando')
 				if constraints:
@@ -405,6 +413,12 @@ def translate(args):
 									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 									max_new_tokens=MAX_TOKENS,
 									prefix_allowed_tokens_fn=restrictor.restrict_prefix).tolist()[0]
+				if len(generated_tokens) >= MAX_TOKENS:
+					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+				output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+				if args.verbose:
+					print("ITE {0}: {1}".format(ite, output))
 				#print('listo')
 
 			#file_out.write("{}\n".format(output[0]))
@@ -417,10 +431,13 @@ def translate(args):
 		#print("Total Mouse Actions: {}".format(mouse_actions))
 		#print("Total Word Strokes: {}".format(word_strokes))
 
-		#output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
+		output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
 		#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
-		#print(output_txt)
-		#print("\n")
+		if args.verbose:
+			print('Word strokes:',corrections)
+			print('Mouse actions:',actions + 1)
+			print(output_txt)
+			print("\n")
 		file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
 		#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
 		file_out.flush()
@@ -565,7 +582,8 @@ def read_parameters():
 	parser.add_argument("-wsr","--word_stroke", required=False, default=0, type=float, help="Last word stroke ratio")
 	parser.add_argument("-mar","--mouse_action", required=False, default=0, type=float, help="Last mouse action ratio")
 	parser.add_argument("-f","--filters", required=False, nargs='+', default=[],choices=['min_len','max_near','max_far'], help="Filters to apply to the segments")
-	parser.add_argument("-v","--values", required=False, nargs='+', default=[], type=int, help="Values for the filters")
+	parser.add_argument("-val","--values", required=False, nargs='+', default=[], type=int, help="Values for the filters")
+	parser.add_argument("-v","--verbose", required=False, default=False, action='store_true', help="Verbose mode")
 
 	args = parser.parse_args()
 	return args
