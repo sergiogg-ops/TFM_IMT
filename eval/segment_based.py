@@ -25,13 +25,13 @@ class Restrictor():
 		self.vocab = vocab
 		self.tokenizer = tokenizer
 		self.prefix = []
-		self.correction = None
+		self.correction = ''
 		self.segments = []
 		self.prev_tseg = -np.ones(len(target)+1,dtype=int)
 		self.filters = filters
 		self.values = values
 
-	def create_constraints(self, full_end, filters=['min_len'], values=[1], verbose=False):
+	def create_constraints(self, filters=['min_len'], values=[1], verbose=False):
 
 		if verbose:
 			if self.prefix:
@@ -43,15 +43,9 @@ class Restrictor():
 		#print('Full End:',full_end)
 		# segmentos intermedios
 		tok_segments = []
-		if len(self.segments) > 1:
-			#tok_segments += [self.tokenizer.encode(' '.join(s))[1:-1] for s in self.segments[:-1]]
-			tok_segments += [self.tokenizer.encode(s)[1:-1] for s in self.segments[:-1]]
-		# ultimo segmento
 		if self.segments:
-			#tok_segments.append(self.tokenizer.encode(' '.join(self.segments[-1]))[1:])
-			tok_segments.append(self.tokenizer.encode(self.segments[-1])[1:])
-			if not full_end:
-				tok_segments[-1] = tok_segments[-1][:-1] # quita eos
+			#tok_segments += [self.tokenizer.encode(' '.join(s))[1:-1] for s in self.segments[:-1]]
+			tok_segments += [self.tokenizer.encode(s)[1:-1] for s in self.segments] # quita bos y eos
 			
 		constraints = [PhrasalConstraint(s) for s in tok_segments]
 		return constraints
@@ -104,9 +98,10 @@ class Restrictor():
 			i += 1
 			num_corrections += 1
 		if i < lent and tgt[i-1] == hyp[i-1][:len(tgt[i-1])]:
-			self.self.correction += tgt[i] + ' '
+			self.correction += tgt[i] + ' '
 			i += 1
 			num_corrections += 1
+
 		self.tok_prefix = [2] + self.tokenizer(text_target=self.prefix).input_ids[:-1]
 		#print('Prefijo:',self.prefix)
 		t_seg[i:] = self.filter_segments(t_seg[i:])
@@ -157,33 +152,43 @@ class Restrictor():
 		t_seg = -np.ones(lent+1,dtype=int) # +1 simboliza el final
 		#h_seg = np.zeros(lenh+1,dtype=int) # +1 simboliza el final
 		dp = np.zeros((lent+1,lenh+1),dtype=int)
+		h_max = -np.ones(lenh+1,dtype=int)
 		# Calcular matriz de cruces
 		for i in range(0,lent):
 			for j in range(0,lenh):
 				if tgt[i] == hyp[j]:
 					dp[i+1,j+1] = dp[i,j] + 1
-			idx = np.argmax(dp[i+1,:]) 
-			length = dp[i+1,idx]
-			t_seg[(i-length+1):i+1] = np.arange(idx-length,idx) if length > 0 else -1
-		if verbose:
+			#idx = np.argmax(dp[i+1,:]) 
+			#t_seg[(i-length+1):i+1] = np.arange(idx-length,idx) if dp[i,idx] > 0 else -1
+			prev_t, h = self.search_idx(dp,i+1,h_max)
+			#print(prev_t,h)
+			if prev_t != -1:
+				h_max[h] = i+1 # actualizar usados
+				prev_length = dp[prev_t,h]
+				t_seg[(prev_t-prev_length+1):prev_t+1] = -1 # eliminar segmento menor anterior
+			if h != -1:
+				h_max[h] = i+1 # actualizar usados
+				length = dp[i+1,h]
+				t_seg[(i-length+1):i+1] = np.arange(h-length,h) # incluir segmento mayor actual
+			
+		if verbose: 
 			print('Validado:',self.prev_tseg)
 			print('Nuevo:   ',t_seg)
 
 		# Calcular acciones de nuevos segmentos
 		self.prefix = ''
-		used_tok = set()
 		mouse_actions = 0
 		i = 0
 		while i < lent and t_seg[i] != -1:
 			if t_seg[i] != t_seg[i-1]+1:
 				mouse_actions += 1 #union de segmentos
 			self.prefix += tgt[i] + ' '
-			used_tok.add(t_seg[i])
 			i += 1
 		if mouse_actions > 0:
 			mouse_actions += 1 # union de segmentos
 		mouse_actions += min(2,i) # prefijo (1 o mas palabras)
 
+		prev_correction = self.correction
 		self.correction = ''
 		num_corrections = 0
 		if i < lent:
@@ -194,6 +199,10 @@ class Restrictor():
 			self.correction += tgt[i] + ' '
 			i += 1
 			num_corrections += 1
+		while i < len(tgt) and len(prev_correction) >= len(self.correction) and prev_correction[:len(self.correction)] == self.correction:
+			self.correction += tgt[i] + ' '
+			num_corrections += 1
+			i += 1
 		
 		mouse_actions += num_corrections
 		self.tok_prefix = [2] + self.tokenizer(text_target=self.prefix).input_ids[:-1]
@@ -202,24 +211,22 @@ class Restrictor():
 		first_tok = i-1
 		self.segments = ['']
 		for j in range(i,lent+1):
-			if not t_seg[j] in used_tok:
-				# token validado
-				if t_seg[j] !=-1:
-					# Inicio absoluto de segmento
-					if t_seg[j-1] == -1:
-						self.segments.append('')
-						first_tok = j
-					self.segments[-1] += tgt[j] + ' '
-					used_tok.add(t_seg[j])
-				# acciones de raton
-				if t_seg[j-1] != -1 and t_seg[j-1] + 1 != t_seg[j]:
-					# ¿segmento nuevo?
-					if np.sum(t_seg[first_tok:j] != -1) != np.sum(self.prev_tseg[first_tok:j] != -1):
-						mouse_actions += 2 if j - first_tok > 1 else 1
-					# ¿punto de union de segmentos?
-					if t_seg[j] != -1:
-						mouse_actions += 2
+			# token validado
+			if t_seg[j] != -1:
+				# Inicio absoluto de segmento
+				if t_seg[j-1] == -1:
+					self.segments.append('')
 					first_tok = j
+				self.segments[-1] += tgt[j] + ' '
+			# acciones de raton
+			if t_seg[j-1] != -1 and t_seg[j-1] + 1 != t_seg[j]:
+				# ¿segmento nuevo?
+				if np.sum(t_seg[first_tok:j] != -1) != np.sum(self.prev_tseg[first_tok:j] != -1):
+					mouse_actions += 2 if j - first_tok > 1 else 1
+				# ¿punto de union de segmentos?
+				if t_seg[j] != -1:
+					mouse_actions += 2
+				first_tok = j
 		if self.segments and self.segments[0] == '':
 			self.segments = self.segments[1:]
 		
@@ -227,6 +234,134 @@ class Restrictor():
 		if verbose:
 			print('Actions:',mouse_actions)
 		return mouse_actions, num_corrections, t_seg[-1], i == lent
+	
+	def check_segments3(self,tgt,hyp,verbose=False):
+		tgt = tokenize(tgt)
+		hyp = tokenize(hyp)
+
+		lent, lenh = len(tgt), len(hyp)
+		dp = self.cruce(tgt,hyp,lent,lenh)
+		print(dp)
+		t_seg = self.segmentos(dp, -np.ones(lent+1,dtype=int), 0, lent, 0, lenh)
+		if verbose: 
+			print('Validado:',self.prev_tseg)
+			print('Nuevo:   ',t_seg)
+
+		# PREFIJO
+		i = 0
+		self.prefix = ''
+		while i < lent and t_seg[i] == 1:
+			self.prefix += tgt[i] + ' '
+			i += 1
+		mouse_actions = min(2,i) # prefijo (1 o mas palabras)
+		self.tok_prefix = [2] + self.tokenizer(text_target=self.prefix).input_ids[:-1]
+		t_seg[i:] = self.filter_segments(t_seg[i:])
+		# CORRECCION
+		num_corrections = 0
+		prev_correction = self.correction
+		self.correction = ''
+		if i < lent:
+			self.correction += tgt[i] + ' '
+			i += 1
+			num_corrections += 1
+		if i < lent and tgt[i-1] == hyp[i-1][:len(tgt[i-1])]:
+			self.correction += tgt[i] + ' '
+			i += 1
+			num_corrections += 1
+		while i < lent and len(prev_correction) >= len(self.correction) and prev_correction[:len(self.correction)] == self.correction:
+			self.correction += tgt[i] + ' '
+			num_corrections += 1
+			i += 1
+		mouse_actions += 1
+		# SEGMENTOS
+		self.segments = ['']
+		first_tok = i-1
+		for j in range(i,lent+1):
+			# token validado
+			if t_seg[j] != -1:
+				# Inicio absoluto de segmento
+				if t_seg[j-1] == -1:
+					self.segments.append('')
+					first_tok = j
+				self.segments[-1] += tgt[j] + ' '
+			# acciones de raton
+			if t_seg[j-1] != -1 and t_seg[j-1] + 1 != t_seg[j]:
+				# ¿segmento nuevo?
+				if np.sum(t_seg[first_tok:j] != -1) != np.sum(self.prev_tseg[first_tok:j] != -1):
+					mouse_actions += 2 if j - first_tok > 1 else 1
+				# ¿punto de union de segmentos?
+				if t_seg[j] != -1:
+					mouse_actions += 2
+				first_tok = j
+		if self.segments and self.segments[0] == '':
+			self.segments = self.segments[1:]
+		
+		self.prev_tseg = t_seg
+		if verbose:
+			print('Actions:',mouse_actions)
+		return mouse_actions, num_corrections, i == lent
+
+	
+	def cruce(self,tgt,hyp,lent,lenh):
+		dp = np.zeros((lent+1,lenh+1),dtype=int)
+		for i in range(0,lent):
+			for j in range(0,lenh):
+				if tgt[i] == hyp[j]:
+					dp[i+1,j+1] = dp[i,j] + 1
+		return dp
+	
+	def segmentos(self,dp, tgt, ini_t, fin_t, ini_h, fin_h):
+		if ini_t > fin_t or ini_h > fin_h:
+			return tgt
+		fin_lcs = np.unravel_index(np.argmax(dp[ini_t:fin_t,ini_h:fin_h]), (fin_t-ini_t,fin_h-ini_h))
+		print(fin_lcs)
+		if dp[fin_lcs[0],fin_lcs[1]] == 0:
+			return tgt
+		ini_lcs = fin_lcs - dp[fin_lcs]
+		# segmentos anteriores
+		if ini_lcs[0] > ini_t:
+			print('anteriores')
+			tgt = self.segmentos(dp,tgt,ini_t,ini_lcs[0],ini_h,ini_lcs[1])
+		# segmento mas largo comun
+		tgt[ini_lcs[0]:fin_lcs[0]] = np.arange((ini_lcs[1],fin_lcs[1]+1))
+		# segmentos posteriores
+		if fin_lcs[0] < fin_t:
+			print('posteriores')
+			tgt = self.segmentos(dp,tgt,fin_lcs[0],fin_t,fin_lcs[1],fin_h)
+		return tgt
+			
+	def dicc_idx(self,lista,ini=0):
+		dicc = {}
+		for i in range(ini,len(lista)):
+			if lista[i] in dicc:
+				dicc[lista[i]].append(i)
+			else:
+				dicc[lista[i]] = [i]
+		return dicc
+
+	
+	def search_idx(self,dp, i,h_max):
+		'''
+			Buscar indice no conflictivo de mayor longitud
+
+			Parametros:
+				dp (np.array): matriz de cruces
+				i (int): indice de la oracion objetivo (en target)
+				h_max (np.array): lista de indices de las hipotesis (en hypothesis)
+			
+			Returns:
+				indice en target a borrar
+				indice en hypothesis
+		'''
+		posible = np.argsort(dp[i,:]) # hyp idxs
+		j = posible.shape[0]-1
+		while j >= 0:
+			if h_max[posible[j]] == -1:
+				return -1, posible[j]
+			if dp[h_max[posible[j]],posible[j]] < dp[i,posible[j]]:
+				return h_max[posible[j]], posible[j]
+			j -= 1
+		return -1, -1
 
 	def filter_segments(self, mask):
 		for f,v in zip(self.filters,self.values):
@@ -316,7 +451,7 @@ def load_model(model_path, args, _dev=None):
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
 	return _mdl, _tok
-
+	
 def translate(args):
 	#try:
 	#|========================================================
@@ -333,6 +468,7 @@ def translate(args):
 		file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
 	file_out = open(file_name, 'w')
 	file_out.write(str(args))
+	file_out.write("\n")
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
@@ -391,15 +527,18 @@ def translate(args):
 			ite += 1
 
 			#prefix, correction = check_prefix(c_trg, output)
-			actions, corrections, full_end, ended = restrictor.check_segments2(c_trg, output,verbose=args.verbose)
+			actions, corrections, ended = restrictor.check_segments3(c_trg, output,verbose=args.verbose)
 			#segments, correction, full_end = check_segments(c_trg, output)
 			#print(segments)
 			word_strokes += corrections
 			mouse_actions += actions + 1
+			if args.verbose:
+				print('Mouse actions:',actions + 1)
+				print('Word strokes:',corrections)
 
 			if not ended:
 				#prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near'], values=[3])
-				constraints = restrictor.create_constraints(full_end, filters=[], values=[],verbose=args.verbose)
+				constraints = restrictor.create_constraints(filters=[], values=[],verbose=args.verbose)
 
 				#print('generando')
 				if constraints:
