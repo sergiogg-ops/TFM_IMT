@@ -20,115 +20,16 @@ from transformers.generation import Constraint
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
 
-class OrderedListConstraints(Constraint):
-	def __init__(self, segments):
-		self.tok_segments = segments
-		self.constraints = [PhrasalConstraint(seg) for seg in segments]
-		self.num_seg = len(segments)
-		self.idx_seg = 0
-		self.seqlen = sum([c.seqlen for c in self.constraints])
-		self.completed = False
-		self.progress = 0
-
-	def advance(self):
-		"""
-    	When called, returns the token that would take this constraint one step closer to being fulfilled.
-
-		Return:
-			token_ids(`torch.tensor`): Must be a tensor of a list of indexable tokens, not some integer.
-		"""
-		if self.completed:
-			return None
-		return self.constraints[self.idx_seg].advance()
-
-	def does_advance(self, token_id: int):
-		"""
-		Reads in a token and returns whether it creates progress.
-		"""
-		if self.completed:
-			return False
-		return self.constraints[self.idx_seg].does_advance(token_id)
-
-	def update(self, token_id: int):
-		"""
-		Reads in a token and returns booleans that indicate the progress made by it. This function will update the
-		state of this object unlikes `does_advance(self, token_id: int)`.
-
-		This isn't to test whether a certain token will advance the progress; it's to update its state as if it has
-		been generated. This becomes important if token_id != desired token (refer to else statement in
-		PhrasalConstraint)
-
-		Args:
-			token_id(`int`):
-				The id of a newly generated token in the beam search.
-		Return:
-			stepped(`bool`):
-				Whether this constraint has become one step closer to being fulfuilled.
-			completed(`bool`):
-				Whether this constraint has been completely fulfilled by this token being generated.
-			reset (`bool`):
-				Whether this constraint has reset its progress by this token being generated.
-		"""
-		stepped, completed, reset = self.constraints[self.idx_seg].update(token_id)
-		if stepped:
-			self.progress += 1
-		if completed:
-			self.idx_seg += 1
-			self.completed = self.idx_seg >= self.num_seg
-		if self.idx_seg == 0:
-			return stepped,self.completed,reset
-		else:
-			return stepped, self.completed, False
-
-	def reset(self):
-		"""
-		Resets the state of this constraint to its initialization. We would call this in cases where the fulfillment of
-		a constraint is abrupted by an unwanted token.
-		"""
-		for c in self.constraints[:self.idx_seg]:
-			c.reset()
-		self.idx_seg = 0
-		self.completed = False
-		self.progress = 0
-
-	def remaining(self):
-		"""
-		Returns the number of remaining steps of `advance()` in order to complete this constraint.
-		"""
-		return self.seqlen - self.progress
-
-	def copy(self, stateful=False):
-		"""
-		Creates a new instance of this constraint.
-
-		Args:
-			stateful(`bool`): Whether to not only copy the constraint for new instance, but also its state.
-
-		Return:
-			constraint(`Constraint`): The same constraint as the one being called from.
-		"""
-		return OrderedListConstraints(self.tok_segments)
-
 class Restrictor():
-	def __init__(self,vocab, tokenizer, target, filters = [], values = [], wait_tokens = 3):
-		# Vocabulario
+	def __init__(self,vocab, tokenizer, target, filters = [], values = []):
 		self.vocab = vocab
 		self.tokenizer = tokenizer
-		self.start_toks = [key for key in self.tokenizer.get_vocab().keys() if not key[0].isalpha()]
-		self.eos = self.tokenizer.get_vocab()[tokenizer.eos_token]
-		# segmentos
 		self.prefix = []
 		self.correction = ''
 		self.segments = []
 		self.prev_tseg = -np.ones(len(target)+1,dtype=int)
-		# filtrado de segmentos
 		self.filters = filters
 		self.values = values
-		# forzado de la busqueda
-		self.idx_seg = 0
-		self.idx_tok = -1
-		self.waiting = 0
-		self.max_waiting = wait_tokens
 
 	def create_constraints(self, filters=['min_len'], values=[1], verbose=False):
 
@@ -148,19 +49,6 @@ class Restrictor():
 			
 		constraints = [PhrasalConstraint(s) for s in tok_segments]
 		return constraints
-	def create_constraints2(self, filters=['min_len'], values=[1], verbose=False):
-		if verbose:
-			if self.prefix:
-				print('Segmentos:',[self.prefix] + self.segments)
-			else:
-				print('Segmentos:',self.segments)
-			print('Correcciones:',self.correction)
-		self.segments = [self.correction] + self.segments
-		print(self.segments)
-		tok_segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments] # quita bos y eos
-		print([self.tokenizer.decode(s) for s in tok_segments])
-			
-		return [OrderedListConstraints(tok_segments)]
 	
 	def restrict_prefix(self,batch_idx, prefix_beam):
 		pos = len(prefix_beam)
@@ -361,13 +249,12 @@ class Restrictor():
 
 		# PREFIJO
 		i = 0
-		self.segments = []
-		if t_seg[0] == 1:
-			self.segments.append('')
+		self.prefix = ''
 		while i < lent and t_seg[i] == 1:
-			self.segments[-1] += tgt[i] + ' '
+			self.prefix += tgt[i] + ' '
 			i += 1
 		mouse_actions = min(2,i) # prefijo (1 o mas palabras)
+		self.tok_prefix = [2] + self.tokenizer(text_target=self.prefix).input_ids[:-1]
 		t_seg[i:] = self.filter_segments(t_seg[i:])
 		# CORRECCION
 		num_corrections = 0
@@ -381,9 +268,13 @@ class Restrictor():
 			self.correction += tgt[i] + ' '
 			i += 1
 			num_corrections += 1
+		while i < lent and len(prev_correction) >= len(self.correction) and prev_correction[:len(self.correction)] == self.correction:
+			self.correction += tgt[i] + ' '
+			num_corrections += 1
+			i += 1
 		mouse_actions += 1
 		# SEGMENTOS
-		#self.segments += ['']
+		self.segments = ['']
 		first_tok = i-1
 		for j in range(i,lent+1):
 			# token validado
@@ -402,14 +293,12 @@ class Restrictor():
 				if t_seg[j] != -1:
 					mouse_actions += 2
 				first_tok = j
-		while self.segments and self.segments[0] == '':
-			self.segments = self.segments[0:]
+		if self.segments and self.segments[0] == '':
+			self.segments = self.segments[1:]
 		
 		self.prev_tseg = t_seg
 		if verbose:
 			print('Actions:',mouse_actions)
-			print('Segmentos:', self.segments)
-			print('Correccion:', self.correction)
 		return mouse_actions, num_corrections, i == lent
 
 	
@@ -422,21 +311,33 @@ class Restrictor():
 		return dp
 	
 	def segmentos(self,dp, tgt, ini_t, fin_t, ini_h, fin_h):
-		if ini_t >= fin_t or ini_h >= fin_h:
+		if ini_t > fin_t or ini_h > fin_h:
 			return tgt
 		fin_lcs = np.unravel_index(np.argmax(dp[ini_t:fin_t,ini_h:fin_h]), (fin_t-ini_t,fin_h-ini_h))
+		print(fin_lcs)
 		if dp[fin_lcs[0],fin_lcs[1]] == 0:
 			return tgt
 		ini_lcs = fin_lcs - dp[fin_lcs]
 		# segmentos anteriores
 		if ini_lcs[0] > ini_t:
+			print('anteriores')
 			tgt = self.segmentos(dp,tgt,ini_t,ini_lcs[0],ini_h,ini_lcs[1])
 		# segmento mas largo comun
-		tgt[ini_lcs[0]:fin_lcs[0]] = np.arange(ini_lcs[1],fin_lcs[1])
+		tgt[ini_lcs[0]:fin_lcs[0]] = np.arange((ini_lcs[1],fin_lcs[1]+1))
 		# segmentos posteriores
 		if fin_lcs[0] < fin_t:
+			print('posteriores')
 			tgt = self.segmentos(dp,tgt,fin_lcs[0],fin_t,fin_lcs[1],fin_h)
 		return tgt
+			
+	def dicc_idx(self,lista,ini=0):
+		dicc = {}
+		for i in range(ini,len(lista)):
+			if lista[i] in dicc:
+				dicc[lista[i]].append(i)
+			else:
+				dicc[lista[i]] = [i]
+		return dicc
 
 	
 	def search_idx(self,dp, i,h_max):
@@ -497,47 +398,6 @@ class Restrictor():
 			num -= mask[i] == 1 and mask[i+1] == 0
 		mask[:i+1] = 0
 		return mask
-	
-	def prepare(self):
-		self.segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
-	
-	def restrict(self,batch_id, input_ids):
-		# ¿Se ha terminado de añadir segmentos?
-		if self.idx_seg >= len(self.segments):
-			return self.vocab
-		
-		token = None
-		# Si no estamos añadiendo ningun segmento miramos si podemos empezar con uno
-		if self.idx_tok == -1:
-			# ¿el token sugerido es el inicio del siguiente segmento?
-			if input_ids[-1] == self.segments[self.idx_seg][0]:
-				token = self.segments[self.idx_seg][0]
-				self.idx_tok = 1
-			elif self.waiting >= self.max_waiting:
-				token = self.segments[self.idx_seg][0]
-				self.idx_tok = 1
-		else:
-			token = self.segments[self.idx_seg][self.idx_tok]
-			self.idx_tok += 1
-
-		# ¿hemos terminado de añadir el segmento actual?
-		last = self.idx_tok >= len(self.segments[self.idx_seg])
-		if last:
-			self.idx_tok = -1
-			self.idx_seg += 1
-		
-		if token:
-			self.waiting = 0
-			return [token]
-		else:
-			self.waiting += 1
-		# ultimo token de segmento -> tokens de inicio de palabra
-		if last:
-			return self.start_toks
-		# no se ha terminado de añadir segmentos -> no fin -> no eos
-		else:
-			return self.vocab[:self.eos] + self.vocab[self.eos+1:]
-		
 
 def read_file(name):
 	file_r = open(name, 'r')
@@ -678,14 +538,20 @@ def translate(args):
 
 			if not ended:
 				#prefix, constraints = create_constraints(segments, correction, full_end, tokenizer,filters=['max_near'], values=[3])
-				#constraints = restrictor.create_constraints(filters=[], values=[],verbose=args.verbose)
-				restrictor.prepare()
+				constraints = restrictor.create_constraints(filters=[], values=[],verbose=args.verbose)
 
 				#print('generando')
-				generated_tokens = model.generate(**encoded_src,
-								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-								max_new_tokens=MAX_TOKENS,
-								prefix_allowed_tokens_fn=restrictor.restrict).tolist()[0]
+				if constraints:
+					generated_tokens = model.generate(**encoded_src,
+									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+									max_new_tokens=MAX_TOKENS,
+									constraints = constraints,
+									prefix_allowed_tokens_fn=restrictor.restrict_prefix).tolist()[0]
+				else:
+					generated_tokens = model.generate(**encoded_src,
+									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+									max_new_tokens=MAX_TOKENS,
+									prefix_allowed_tokens_fn=restrictor.restrict_prefix).tolist()[0]
 				if len(generated_tokens) >= MAX_TOKENS:
 					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
 				output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
