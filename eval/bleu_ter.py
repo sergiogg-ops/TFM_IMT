@@ -8,7 +8,7 @@ from tqdm import tqdm
 from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
 						  M2M100ForConditionalGeneration, M2M100Tokenizer,
 						  AutoModelForSeq2SeqLM, AutoTokenizer,
-                          PhrasalConstraint)
+                          TranslationPipeline)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
@@ -74,35 +74,28 @@ def translate(args):
 	print('Cargando modelo...')
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	file_name = '{0}/test.{1}'.format(args.folder, args.source)
+	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.source)
 	src_lines = read_file(file_name)
-	file_name = '{0}/test.{1}'.format(args.folder, args.target)
+	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
 	trg_lines = read_file(file_name)
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
 	model, tokenizer = load_model(model_path, args, device)
 	#|========================================================
-	MAX_TOKENS = 128
-	hypotheses = []
+	MAX_TOKENS = 400
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
-	progress_bar = tqdm(total=len(src_lines), desc="Traduciendo", unit="iter")
-	for i in range(len(src_lines)):
-		tok_src = tokenizer(src_lines[i],return_tensors='pt').to(device)
-		tok_hyp = model.generate(**tok_src,forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-									max_new_tokens=MAX_TOKENS).tolist()[0]
-		#hypotheses.append(tokenizer.decode(tok_hyp,skip_special_tokens=True))
-		bleu_metric.add(prediction=tokenizer.decode(tok_hyp,skip_special_tokens=True),reference=trg_lines[i])
-		ter_metric.add(prediction=tokenizer.decode(tok_hyp,skip_special_tokens=True),reference=trg_lines[i])
-		hypotheses.append(tok_hyp)
-		progress_bar.update(1)
+	translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=32, device=device)
+	#|========================================================
+	#| TRANSLATE
+	print('Traduciendo...')
+	translation = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
+	hypothesis = [t['translation_text'] for t in translation]
+	print(type(translation))
 	print('Evaluando metricas...')
-	bleu = bleu_metric.compute()
-	ter = ter_metric.compute()
-	#print(len(hypotheses))
-	#print(hypotheses[0])
-	#print(trg_lines[0])
+	bleu = bleu_metric.compute(predictions=hypothesis,references=trg_lines)
+	ter = ter_metric.compute(predictions=hypothesis,references=trg_lines)
 	print('BLEU:')
 	print(f'\t{bleu}')
 	print('TER:')
@@ -221,10 +214,10 @@ def check_language_code(code):
 
 def check_parameters(args):
 	# Check Source Language
-	args.source_code = check_language_code(args.source)
+	args.source_code = check_language_code(args.source) if args.model_name == 'mbart' else args.source
 
 	# Check Target Language
-	args.target_code = check_language_code(args.target)
+	args.target_code = check_language_code(args.target) if args.model_name == 'mbart' else args.target
 
 	# Check the model that is going to load
 	if args.model == None:
@@ -237,6 +230,7 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
+	parser.add_argument("-p","--partition", required=False, default="test", choices=["dev","test"], help="Partition to load")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5'], help="Model to load")
 
