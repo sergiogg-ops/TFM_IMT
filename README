@@ -6,6 +6,8 @@ flan-t5, base (220M parametros) -> https://huggingface.co/google/flan-t5-base
 
 M2M, many-to-many (483.905.536 parametros) -> https://huggingface.co/docs/transformers/model_doc/m2m_100
 
+NLLB, many-to-many -> https://huggingface.co/docs/transformers/model_doc/nllb
+
 bloom, 560M parametros, PROMT -> https://huggingface.co/bigscience/bloom-560m
 
 tower, sobre Llama, PROMT (6.738.472.960 parametros) → https://huggingface.co/Unbabel/TowerInstruct-7B-v0.2

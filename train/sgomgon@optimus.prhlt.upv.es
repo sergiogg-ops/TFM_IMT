@@ -251,8 +251,6 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5'],help='Model to train')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
-	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
-	parser.add_argument('-bs','--batch_size',type=int,default=32,help='Batch size')
 
 	args = parser.parse_args()
 	return args
@@ -276,12 +274,12 @@ def main():
 		evaluation_strategy='steps',
 		eval_steps=100000,
 		learning_rate=2e-5,
-		per_device_train_batch_size=args.batch_size,
-		per_device_eval_batch_size=args.batch_size,
+		per_device_train_batch_size=16,
+		per_device_eval_batch_size=16,
 		weight_decay=0.01,
 		save_total_limit=3,
-		save_steps=100000,
-		num_train_epochs=args.epochs,
+		save_steps=10000,
+		num_train_epochs=3,
 		predict_with_generate=True,
 		fp16=True,
 		)
