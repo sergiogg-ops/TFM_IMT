@@ -1,0 +1,18 @@
+\begin{tabular}{llllrr}
+\hline
+ modelo   & metodo   & src   & trg   &   wsr &   mar \\
+\hline
+ MBart    & prefix   & fr    & en    & 34.3  &  5.73 \\
+ MBart    & prefix   & en    & fr    & 30.98 &  5.55 \\
+ MBart    & prefix   & de    & en    & 34.84 &  5.67 \\
+ MBart    & prefix   & en    & de    & 36.77 &  5.24 \\
+ MBart    & prefix   & es    & en    & 34.8  &  5.68 \\
+ MBart    & prefix   & en    & es    & 35.1  &  5.36 \\
+ MBart    & segment  & fr    & en    & 25.18 & 32.37 \\
+ MBart    & segment  & en    & fr    & 25.61 & 30.12 \\
+ MBart    & segment  & en    & de    & 31.61 & 28.13 \\
+ MBart    & segment  & de    & en    & 30.27 & 34.64 \\
+ MBart    & segment  & es    & en    & 29.02 & 32.96 \\
+ MBart    & segment  & en    & es    & 30.52 & 35.34 \\
+\hline
+\end{tabular}

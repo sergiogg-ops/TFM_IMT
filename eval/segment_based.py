@@ -7,6 +7,7 @@ Example of use:
 import argparse
 import sys
 from math import ceil
+from time import time
 
 import numpy as np
 import torch
@@ -22,7 +23,7 @@ wordTokenizer = TreebankWordTokenizer()
 #np.set_printoptions(threshold=np.inf)
 
 class Restrictor():
-	def __init__(self,vocab, tokenizer, target_len, filters = [], values = [], wait_tokens = 3):
+	def __init__(self,vocab, tokenizer, target_len, wait_tokens = 3):
 		self.mierdaenbote=0
 		# Vocabulario
 		self.vocab = vocab
@@ -38,97 +39,11 @@ class Restrictor():
 		self.segments = []
 		self.prev_tseg = -np.ones(target_len+1,dtype=int)
 		self.prev_ini = np.zeros(target_len+1,dtype=int)
-		# filtrado de segmentos
-		self.filters = filters
-		self.values = values
 		# forzado de busqueda
 		self.max_wait = wait_tokens
 		self.prefix = False
-	
+
 	def check_segments(self,tgt,hyp,verbose=False):
-		# tokenizar strings
-		tgt = tokenize(tgt)
-		hyp = tokenize(hyp)
-
-		lent, lenh = len(tgt), len(hyp)
-		dp = self.cruce(tgt,hyp,lent,lenh)
-		#print(dp)
-		t_seg = self.get_segments(dp)
-		ini_seg = np.zeros(t_seg.shape[0],dtype=int)
-		if verbose: 
-			print('Validado:',self.prev_tseg)
-			print('Nuevo:   ',t_seg)
-		
-		self.segments = ['']
-		num_corrections = 0
-		mouse_actions = 0
-
-		# Primer fallo
-		corr = 0
-		while corr < lent and t_seg[corr] != -1:
-			corr += 1
-		i = corr + 1
-		# Segundo fallo
-		while i < lent and t_seg[i] != -1:
-			i += 1
-
-		# SEGMENTOS
-		first_tok = -1
-		new_seg = not self.prev_ini[0]
-		for j in range(lent+1):
-			# token validado
-			if t_seg[j] != -1:
-				# Inicio absoluto de segmento o inicio de segmento ya validado consecutivo
-				if t_seg[j-1] == -1:
-					self.segments.append('')
-					first_tok = j
-					ini_seg[j] = 1
-				elif self.prev_ini[j] and t_seg[j-1] + 1 == t_seg[j]:
-					if new_seg:
-						new_seg = False
-					else:
-						self.segments.append('')
-						first_tok = j
-						ini_seg[j] = 1
-				self.segments[-1] += tgt[j] + ' '
-			else:
-				new_seg = True
-			# acciones de raton
-			if (t_seg[j-1] != -1 and t_seg[j-1] + 1 != t_seg[j]) or (self.prev_tseg[j-1] == -1 and t_seg[j-1] != -1 and ini_seg[j]):
-				# ¿segmento nuevo?
-				if np.sum(t_seg[first_tok:j] != -1) != np.sum(self.prev_tseg[first_tok:j] != -1):
-					mouse_actions += 2 if j - first_tok > 1 else 1
-				# ¿punto de union de segmentos?
-				if t_seg[j] != -1:
-					mouse_actions += 2
-				first_tok = j
-		while self.segments and self.segments[0] == '':
-			self.segments = self.segments[1:]
-		# CORRECCION
-		pos = np.sum(ini_seg[:corr])
-		self.correction = ''
-		if corr < lent:
-			self.correction += tgt[corr] + ' '
-			t_seg[corr] = lenh
-			ini_seg[corr] = 1
-			corr += 1
-			num_corrections += 1
-			mouse_actions += 1
-			self.segments = self.segments[:pos] + [self.correction] + self.segments[pos:]
-
-		self.prev_tseg = t_seg
-		self.prev_ini = ini_seg
-		if i >= lent:
-			mouse_actions = 0
-			num_corrections = 0
-		if verbose:
-			print('inicios:',self.prev_ini)
-			print('Actions:',mouse_actions)
-			print('Segmentos:', self.segments)
-			print('Correccion:', self.correction)
-		return mouse_actions, num_corrections, i >= lent
-
-	def check_segments2(self,tgt,hyp,verbose=False):
 		# tokenizar strings
 		tgt = tokenize(tgt)
 		hyp = tokenize(hyp)
@@ -261,25 +176,25 @@ class Restrictor():
 		return tgt
 	
 	def prepare(self):
-		self.segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
+		self.tok_segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
 	
 	def restrict(self,batch_id, input_ids):
 		#if self.mierdaenbote % 10 == 0:
-		#	print(self.segments)
+		#	print(self.tok_segments)
 		#self.mierdaenbote += 1
 		idx_seg, idx_tok,last_match = self.get_state(input_ids)
 		#print(idx_seg, idx_tok,last_match,len(input_ids))
 		#print(input_ids.tolist())
 		waiting = len(input_ids) - last_match
 		# ¿Se ha terminado de añadir segmentos?
-		if idx_seg >= len(self.segments):
+		if idx_seg >= len(self.tok_segments):
 			#print('con eos###################################################################')
 			return self.vocab	
 		
 		# ¿hemos terminado de añadir el segmento actual?
 		# ultimo token de segmento -> tokens de inicio de palabra
-		if idx_tok >= len(self.segments[idx_seg]):
-			if idx_seg >= len(self.segments)-1:
+		if idx_tok >= len(self.tok_segments[idx_seg]):
+			if idx_seg >= len(self.tok_segments)-1:
 				# ultimo token añadido
 				#print('con eos###################################################################')
 				return self.start_toks + [self.eos]
@@ -289,15 +204,15 @@ class Restrictor():
 		token = None
 		# ¿prefijo?
 		if self.prefix and len(input_ids) == 2:
-			#print('prefijo:',self.segments[0][0])
-			token = self.segments[0][0]
+			#print('prefijo:',self.tok_segments[0][0])
+			token = self.tok_segments[0][0]
 		# Si no estamos añadiendo ningun segmento miramos si podemos empezar con uno
 		elif idx_tok == -1:
-			if waiting >= self.max_wait or input_ids[-1] == self.segments[idx_seg][0]:
+			if waiting >= self.max_wait or input_ids[-1] == self.tok_segments[idx_seg][0]:
 				# ¿el token sugerido es el inicio del siguiente segmento?
-				token = self.segments[idx_seg][0]
+				token = self.tok_segments[idx_seg][0]
 		else:
-			token = self.segments[idx_seg][idx_tok]
+			token = self.tok_segments[idx_seg][idx_tok]
 		
 		if token:
 			#print('token:',token)
@@ -310,32 +225,53 @@ class Restrictor():
 		cur_seg = 0
 		last_pos = 0
 		i = 0
-		while cur_seg < len(self.segments) and i <= len(input_ids) - len(self.segments[cur_seg]):
-			if input_ids[i:(i+len(self.segments[cur_seg]))].tolist() == self.segments[cur_seg]:
-				i += len(self.segments[cur_seg])
+		while cur_seg < len(self.tok_segments) and i <= len(input_ids) - len(self.tok_segments[cur_seg]):
+			if input_ids[i:(i+len(self.tok_segments[cur_seg]))].tolist() == self.tok_segments[cur_seg]:
+				i += len(self.tok_segments[cur_seg])
 				last_pos = i
 				cur_seg += 1
 			else:
 				i += 1
 		if cur_seg > 0 and last_pos == len(input_ids):
-			return cur_seg-1, len(self.segments[cur_seg-1]), last_pos
-		if cur_seg < len(self.segments):
-			#if cur_seg > 0 and input_ids[last_pos:].tolist() == self.segments[cur_seg-1]:
-			cur_tok = min(len(input_ids),len(self.segments[cur_seg]))
-			while cur_tok > 0 and input_ids[-cur_tok:].tolist() != self.segments[cur_seg][:cur_tok]:
+			return cur_seg-1, len(self.tok_segments[cur_seg-1]), last_pos
+		if cur_seg < len(self.tok_segments):
+			#if cur_seg > 0 and input_ids[last_pos:].tolist() == self.tok_segments[cur_seg-1]:
+			cur_tok = min(len(input_ids),len(self.tok_segments[cur_seg]))
+			while cur_tok > 0 and input_ids[-cur_tok:].tolist() != self.tok_segments[cur_seg][:cur_tok]:
 				cur_tok -= 1
 			if cur_tok == 0:
 				cur_tok = -1
 			return cur_seg, cur_tok, last_pos
 		else:
 			return cur_seg, -1, last_pos
-	
 
-def argmax_last(arr):
-	arr = arr.flatten()
-	max_value = np.max(arr)
-	max_indices = np.where(arr == max_value)[0]
-	return max_indices[-1]
+	def decode(self,input_ids):
+		idx_seg = 0
+		idx_tok = 0
+		texto = ''
+		begin = 0
+		for tok in range(len(input_ids)):
+			if idx_seg < len(self.tok_segments) and input_ids[tok] == self.tok_segments[idx_seg][idx_tok]:
+				if input_ids[tok] == self.tokenizer.unk_token_id:
+					first = self.tokenizer.decode(self.tok_segments[idx_seg][:idx_tok], skip_special_tokens=True)
+					first = ' '.join(tokenize(first))
+					ini = len(first)
+					word = self.segments[idx_seg][ini:].split()[0]
+					texto += self.tokenizer.decode(input_ids[begin:tok], skip_special_tokens=True)
+					if ini == 0 or self.segments[idx_seg][ini] == ' ':
+						texto += ' '
+						ini += self.segments[idx_seg][ini] == ' '
+					texto += word
+					if ini+len(word) >= len(self.segments[idx_seg]) or self.segments[idx_seg][ini+len(word)] == ' ':
+						texto += ' ' 
+					begin = tok + 1
+				idx_tok += 1
+				if idx_tok == len(self.tok_segments[idx_seg]):
+					idx_seg += 1
+					idx_tok = 0
+		if begin < len(input_ids):
+			texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
+		return texto
 
 def read_file(name):
 	file_r = open(name, 'r')
@@ -355,26 +291,6 @@ def tokenize(sentence):
 		tokens[idx] = t
 	return tokens
 
-def filter_segments(segments, filters=['min_len'], values=[1], del_punct=False):
-	for f,v in zip(filters,values):
-		if f == 'min_len':
-			segments = [seg for seg in segments if len(seg) >= v]
-		if f == 'max_seg':
-			if len(segments) > v:
-				segments = sorted(segments, key=lambda x: len(x))
-				segments = segments[-v:]
-		if f == 'max_near':
-			segments = segments[:v]
-		if f == 'max_far':
-			segments = segments[v:]
-	if del_punct:
-		for i in range(1,len(segments)):
-			if segments[i]:
-				segments[i] = segments[i] if segments[i][-1] not in ['.',',',';',':','!','?'] else segments[i][:-1]
-			if segments[i]:
-				segments[i] = segments[i] if segments[i][0] not in ['.',',',';',':','!','?'] else segments[i][1:]
-	return segments
-
 def load_model(model_path, args, _dev=None):
 	if args.model_name == 'mbart':
 		_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
@@ -391,136 +307,150 @@ def load_model(model_path, args, _dev=None):
 	return _mdl, _tok
 	
 def translate(args):
-	#try:
-	#|========================================================
-	#| READ SOURCE AND TARGET DATASET
-	file_name = '{0}/test.{1}'.format(args.folder, args.source)
-	if args.final > -1:
-		src_lines = read_file(file_name)[:args.final]
-	else:
-		src_lines = read_file(file_name)
-	file_name = '{0}/test.{1}'.format(args.folder, args.target)
-	if args.final > -1:
-		trg_lines = read_file(file_name)[:args.final]
-	else:
-		trg_lines = read_file(file_name)
+	try:
+		#|========================================================
+		#| READ SOURCE AND TARGET DATASET
+		file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.source)
+		if args.final > -1:
+			src_lines = read_file(file_name)[:args.final]
+		else:
+			src_lines = read_file(file_name)
+		file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
+		if args.final > -1:
+			trg_lines = read_file(file_name)[:args.final]
+		else:
+			trg_lines = read_file(file_name)
 
-	#| PREPARE DOCUMENT TO WRITE
-	if args.output:
-		file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
-	else:
-		file_name = '{0}/imt_mbart.{1}'.format(args.folder, args.target)
-	file_out = open(file_name, 'w')
-	file_out.write(str(args))
-	file_out.write("\n")
-	#|========================================================
-	#| LOAD MODEL AND TOKENIZER
-	model_path = args.model
-	model, tokenizer = load_model(model_path, args, device)
-	#|=========================================================
-	#| PREPARE THE RESTRICTOR
-	VOCAB = [*range(len(tokenizer))]
-	
-	#|=========================================================
-	#| GET IN THE RIGHT PLACE
-
-	total_words = 0
-	total_chars = 0
-	for line in trg_lines[:args.initial]:
-		total_words += len(tokenize(line))
-		total_chars += len(line)
-	total_ws = total_words * args.word_stroke
-	total_ma = total_chars * args.mouse_action
-	#|=========================================================s	
-	for i in range(args.initial, len(src_lines)):
-		#if i<1280-1:
-		#	continue
-		# Save the SRC and TRG sentences
-		c_src = src_lines[i]
-		c_trg = ' '.join(tokenize(trg_lines[i]))
-
-		mouse_actions = 0
-		word_strokes = 0
-		n_words = len(tokenize(trg_lines[i]))
-		n_chars = len(trg_lines[i])
-
-		# Convert them to ids
-		encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
-		#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
-
-		# Prints
-		if args.verbose:
-			'''aux = tokenize(c_trg)
-			aux = ' '.join([aux[idx] + '(' + str(idx) + ')' for idx in range(len(aux))])
-			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,aux))'''
-			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
-
-		ite = 0
-		MAX_TOKENS = 128
-		restrictor = Restrictor(VOCAB,tokenizer,len(tokenize(c_trg)),filters=args.filters,values=args.values)
-		ended = False
-		generated_tokens = model.generate(**encoded_src,
-								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-								max_new_tokens=MAX_TOKENS).tolist()[0]
-		if len(generated_tokens) >= MAX_TOKENS:
-			MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-		output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-
-		if args.verbose:
-			print("ITE {0}: {1}".format(ite, output))
-		while not ended:
-			# Generate the translation
-			ite += 1
-
-			actions, corrections, ended = restrictor.check_segments2(c_trg, output,verbose=args.verbose)
-			word_strokes += corrections
-			mouse_actions += actions + 1
-			if args.verbose:
-				print('Mouse actions:',actions + 1)
-				print('Word strokes:',corrections)
-
-			if not ended:
-				restrictor.prepare()
-
-				raw_output = model.generate(**encoded_src,
-								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-								max_new_tokens=MAX_TOKENS,
-								prefix_allowed_tokens_fn=restrictor.restrict)
-				generated_tokens = raw_output.tolist()[0]
-				if len(generated_tokens) >= MAX_TOKENS:
-					MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
-				elif len(generated_tokens) > 3/4 * MAX_TOKENS:
-					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-				output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-
-				if args.verbose:
-					print("ITE_TOK({0}): {1}".format(len(generated_tokens),generated_tokens))
-					print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
-
-			#file_out.write("{}\n".format(output[0]))
-		total_words += n_words
-		total_chars += n_chars
-		total_ws += word_strokes
-		total_ma += mouse_actions
+		#| PREPARE DOCUMENT TO WRITE
+		if args.output:
+			file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
+		else:
+			file_name = '{0}/imt_{1}.{2}'.format(args.folder, args.model_name, args.target)
+		file_out = open(file_name, 'w')
+		file_out.write(str(args))
+		file_out.write("\n")
+		#|========================================================
+		#| LOAD MODEL AND TOKENIZER
+		model_path = args.model
+		model, tokenizer = load_model(model_path, args, device)
+		#|=========================================================
+		#| PREPARE THE RESTRICTOR
+		VOCAB = [*range(len(tokenizer))]
+		tiempo_total = 0
+		iteraciones = 0
 		
-		#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
-		#print("Total Mouse Actions: {}".format(mouse_actions))
-		#print("Total Word Strokes: {}".format(word_strokes))
+		#|=========================================================
+		#| GET IN THE RIGHT PLACE
 
-		output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f}".format(i, total_ws/total_words, total_ma/total_chars)
-		#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
+		total_words = 0
+		total_chars = 0
+		for line in trg_lines[:args.initial]:
+			total_words += len(tokenize(line))
+			total_chars += len(line)
+		total_ws = total_words * args.word_stroke
+		total_ma = total_chars * args.mouse_action
+		#|=========================================================s	
+		for i in range(args.initial, len(src_lines)):
+			#if i<1280-1:
+			#	continue
+			# Save the SRC and TRG sentences
+			c_src = src_lines[i]
+			c_trg = ' '.join(tokenize(trg_lines[i]))
+
+			mouse_actions = 0
+			word_strokes = 0
+			n_words = len(tokenize(trg_lines[i]))
+			n_chars = len(trg_lines[i])
+
+			# Convert them to ids
+			encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
+			#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
+
+			# Prints
+			if args.verbose:
+				'''aux = tokenize(c_trg)
+				aux = ' '.join([aux[idx] + '(' + str(idx) + ')' for idx in range(len(aux))])
+				print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,aux))'''
+				print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+
+			ite = 0
+			MAX_TOKENS = 256
+			restrictor = Restrictor(VOCAB,tokenizer,len(tokenize(c_trg)))
+			ended = False
+			ini = time()
+			generated_tokens = model.generate(**encoded_src,
+									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+									max_new_tokens=MAX_TOKENS).tolist()[0]
+			tiempo_total += time() - ini 
+			iteraciones += 1
+			if len(generated_tokens) >= MAX_TOKENS:
+				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+			output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+			if args.verbose:
+				print("ITE {0}: {1}".format(ite, output))
+			while not ended:
+				# Generate the translation
+				ite += 1
+
+				actions, corrections, ended = restrictor.check_segments(c_trg, output,verbose=args.verbose)
+				word_strokes += corrections
+				mouse_actions += actions + 1
+				if args.verbose:
+					print('Mouse actions:',actions + 1)
+					print('Word strokes:',corrections)
+
+				if not ended:
+					restrictor.prepare()
+
+					ini = time()
+					raw_output = model.generate(**encoded_src,
+									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+									max_new_tokens=MAX_TOKENS,
+									prefix_allowed_tokens_fn=restrictor.restrict)
+					tiempo_total += time() - ini
+					iteraciones += 1
+					generated_tokens = raw_output.tolist()[0]
+					if len(generated_tokens) >= MAX_TOKENS:
+						MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
+					elif len(generated_tokens) > 3/4 * MAX_TOKENS:
+						MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+					#output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+					output = restrictor.decode(generated_tokens)
+
+					if args.verbose:
+						#print("ITE_TOK({0}): {1}".format(len(generated_tokens),generated_tokens))
+						print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
+
+				#file_out.write("{}\n".format(output[0]))
+			total_words += n_words
+			total_chars += n_chars
+			total_ws += word_strokes
+			total_ma += mouse_actions
+			
+			#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
+			#print("Total Mouse Actions: {}".format(mouse_actions))
+			#print("Total Word Strokes: {}".format(word_strokes))
+
+			output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f} TIME: {3:4f}".format(i, total_ws/total_words, total_ma/total_chars, tiempo_total)
+			#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
+			if args.verbose:
+				print(output_txt)
+				print("\n")
+			file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f} TIME: {3:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i, tiempo_total))
+			#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
+			file_out.flush()
+		output_txt = f"TOTAL => WSR: {total_ws/total_words} - MAR: {total_ma/total_chars} - TIME: {tiempo_total/iteraciones}\n"
+		file_out.write(output_txt)
+		file_out.close()
 		if args.verbose:
 			print(output_txt)
-			print("\n")
-		file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i))
-		#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
-		file_out.flush()
-	file_out.close()
-	#except:
-
-	#	file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
-	#	file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
-	#	file_out.close()
+	except:
+		output_txt = f"TOTAL => WSR: {total_ws/total_words} - MAR: {total_ma/total_chars} - TIME: {tiempo_total/iteraciones}\n"
+		file_out.write(output_txt)
+		file_out.close()
+		if args.verbose:
+			print(output_txt)
 
 def check_language_code(code):
 	if code=='ar':			# Arabic
@@ -633,10 +563,10 @@ def check_language_code(code):
 
 def check_parameters(args):
 	# Check Source Language
-	args.source_code = check_language_code(args.source)
+	args.source_code = check_language_code(args.source) if args.model_name == 'mbart' else args.source
 
 	# Check Target Language
-	args.target_code = check_language_code(args.target)
+	args.target_code = check_language_code(args.target) if args.model_name == 'mbart' else args.target
 
 	# Check the model that is going to load
 	if args.model == None:
@@ -652,12 +582,11 @@ def read_parameters():
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-out", "--output", required=False, help="Output file")
 	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5'], help='Model name')
+	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-fin","--final",required=False, default=-1,type=int,help="Final Line")
 	parser.add_argument("-wsr","--word_stroke", required=False, default=0, type=float, help="Last word stroke ratio")
 	parser.add_argument("-mar","--mouse_action", required=False, default=0, type=float, help="Last mouse action ratio")
-	parser.add_argument("-f","--filters", required=False, nargs='+', default=[],choices=['min_len','max_near','max_far'], help="Filters to apply to the segments")
-	parser.add_argument("-val","--values", required=False, nargs='+', default=[], type=int, help="Values for the filters")
 	parser.add_argument("-v","--verbose", required=False, default=False, action='store_true', help="Verbose mode")
 
 	args = parser.parse_args()
