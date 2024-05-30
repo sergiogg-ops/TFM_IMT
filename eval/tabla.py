@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from tabulate import tabulate
 from argparse import ArgumentParser
+import numpy as np
 
 def get_latex(data):
     data_tex = data.copy()
@@ -42,10 +43,49 @@ def plot_table(data,show_prefix=True):
     plt.title('Segment-based')
     plt.show()
 
+def plot_chart(data):
+    x = np.arange(6)
+    xticks = [('fr','en'),('en','fr'),('es','en'),('en','es'),('de','en'),('en','de')]
+    data = data[data['metodo'] != 'prefix']
+    bar_width = 0.35
+    num_series = len(data['modelo'].unique())
+
+    plt.figure()
+    plt.subplot(2,2,1)
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['bleu'].values.item() for src,trg in xticks]
+        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in xticks])
+    plt.title('BLEU')
+    plt.legend()
+
+    plt.subplot(2,2,2)
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['ter'].values.item() for src,trg in xticks]
+        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in xticks])
+    plt.title('TER')
+    
+    plt.subplot(2,2,3)
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for src,trg in xticks]
+        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in xticks])
+    plt.title('WSR')
+
+    plt.subplot(2,2,4)
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for src,trg in xticks]
+        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in xticks])
+    plt.title('MAR')
+    plt.show()
+
 parser = ArgumentParser()
 parser.add_argument('-f','--file', type=str, default='test.csv', help='Archivo que leer')
 parser.add_argument('-o','--output', type=str, default='tabla.txt', help='Archivo donde guardar la tabla')
 parser.add_argument('-p','--plot', action='store_true', help='Mostrar tabla en gráficos')
+parser.add_argument('-graf','--grafico', action='store_true', help='Mostrar tabla en gráficos')
 parser.add_argument('-pref','--prefix', action='store_true', help='Mostrar tabla de prefijos')
 parser.add_argument('-opt','--opcion', type=str, default='general', choices=['general','bleu_ter','wsr_mar'],help='Opción de tabla a mostrar')
 parser.add_argument('-m','--modelo', type=str, help='Modelo a mostrar')
@@ -54,6 +94,9 @@ args = parser.parse_args()
 data = pd.read_csv(args.file)
 if args.modelo:
     data = data[data['modelo'] == args.modelo]
+if args.grafico:
+    plot_chart(data)
+
 if args.opcion == 'general':
     data = data.drop(columns=['modelo','observaciones'])
 elif args.opcion == 'bleu_ter':
