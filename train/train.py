@@ -4,10 +4,12 @@ Fine Tune Mbart Model
 Example of use:
 	> python3 imt_bart.py -src es -trg en -dir es-en
 """
-from transformers import MBartForConditionalGeneration, MBart50TokenizerFast
-from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from transformers import Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, Seq2SeqTrainer
+from transformers import (MBartForConditionalGeneration, MBart50TokenizerFast,
+						M2M100ForConditionalGeneration, M2M100Tokenizer,
+						AutoTokenizer, AutoModelForSeq2SeqLM,
+						AutoModelForCausalLM, MT5ForConditionalGeneration,
+						Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, Seq2SeqTrainer)
+from peft import LoraConfig, get_peft_model
 from datasets import DatasetDict
 from evaluate import load
 import numpy as np
@@ -47,6 +49,11 @@ def load_model(model_name, _dev=None):
 		_mdl = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M").to(_dev)
 	elif model_name == 'flant5':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
+		#_mdl = AutoModelForSeq2SeqLM.from_pretrained("models/flant5_enfr/checkpoint-180000")
+	elif model_name == 'mt5':
+		_mdl = MT5ForConditionalGeneration.from_pretrained("google/mt5-small")
+	elif model_name == 'llama3':
+		_mdl = AutoModelForCausalLM.from_pretrained("meta-llama/Meta-Llama-3-8B")
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
@@ -60,6 +67,10 @@ def load_tokenizer(args):
 		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
 	elif args.model_name == 'flant5':
 		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small")
+	elif args.model_name == 'mt5':
+		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
+	elif args.model_name == 'llama3':
+		_tok = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -249,7 +260,7 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5'],help='Model to train')
+	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','mt5','llama3'],help='Model to train')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
 	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
 	parser.add_argument('-bs','--batch_size',type=int,default=32,help='Batch size')
@@ -269,12 +280,22 @@ def main():
 	MODEL = load_model(args.model_name, device)
 	TOKENIZER = load_tokenizer(args)
 
+	if args.lora:
+		lora_config = LoraConfig(
+			r=16,
+			lora_alpha=16,
+			lora_dropout=0.1,
+		)
+		MODEL = get_peft_model(MODEL, lora_config)
+
 	dataset = load_datasets(args)
+
+	fp16 = not 't5' in args.model_name
 
 	training_args = Seq2SeqTrainingArguments(
 		'models/{0}_{1}'.format(args.model_name,args.source+args.target),
-		evaluation_strategy='steps',
-		eval_steps=10000,
+		#evaluation_strategy='steps',
+		#eval_steps=10000,
 		learning_rate=2e-5,
 		per_device_train_batch_size=args.batch_size,
 		per_device_eval_batch_size=args.batch_size,
@@ -283,7 +304,7 @@ def main():
 		save_steps=10000,
 		num_train_epochs=args.epochs,
 		predict_with_generate=True,
-		fp16=True,
+		fp16=fp16,
 		)
 
 	data_collator = DataCollatorForSeq2Seq(TOKENIZER, model=MODEL)

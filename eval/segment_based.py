@@ -6,7 +6,6 @@ Example of use:
 """
 import argparse
 import sys
-from math import ceil
 from time import time
 
 import numpy as np
@@ -14,9 +13,7 @@ import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           M2M100ForConditionalGeneration, M2M100Tokenizer,
-                          MBart50TokenizerFast, MBartForConditionalGeneration,
-                          PhrasalConstraint)
-from transformers.generation import Constraint
+                          MBart50TokenizerFast, MBartForConditionalGeneration)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
@@ -47,6 +44,8 @@ class Restrictor():
 		# tokenizar strings
 		tgt = tokenize(tgt)
 		hyp = tokenize(hyp)
+		print(tgt)
+		print(hyp)
 
 		lent, lenh = len(tgt), len(hyp)
 		dp = self.cruce(tgt,hyp,lent,lenh)
@@ -284,6 +283,7 @@ def tokenize(sentence):
 	sentence = sentence.replace('´', '\'')
 	sentence = sentence.replace('\'', ' \' ')
 	sentence = sentence.replace('.', ' . ')
+	sentence = sentence.replace(',', ' , ')
 	sentence = sentence.replace('-', ' - ')
 	tokens = wordTokenizer.tokenize(sentence)
 	for idx, t in enumerate(tokens):
@@ -299,158 +299,159 @@ def load_model(model_path, args, _dev=None):
 		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
 		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'flant5':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path).to(_dev)
 		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",src_lang=args.source_code, tgt_lang=args.target_code)
+	elif model_name == 'mt5':
+		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
 	return _mdl, _tok
 	
 def translate(args):
-	try:
-		#|========================================================
-		#| READ SOURCE AND TARGET DATASET
-		file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.source)
-		if args.final > -1:
-			src_lines = read_file(file_name)[:args.final]
-		else:
-			src_lines = read_file(file_name)
-		file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
-		if args.final > -1:
-			trg_lines = read_file(file_name)[:args.final]
-		else:
-			trg_lines = read_file(file_name)
+	#try:
+	#|========================================================
+	#| READ SOURCE AND TARGET DATASET
+	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.source)
+	if args.final > -1:
+		src_lines = read_file(file_name)[:args.final]
+	else:
+		src_lines = read_file(file_name)
+	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
+	if args.final > -1:
+		trg_lines = read_file(file_name)[:args.final]
+	else:
+		trg_lines = read_file(file_name)
 
-		#| PREPARE DOCUMENT TO WRITE
-		if args.output:
-			file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
-		else:
-			file_name = '{0}/imt_{1}.{2}'.format(args.folder, args.model_name, args.target)
-		file_out = open(file_name, 'w')
-		file_out.write(str(args))
-		file_out.write("\n")
-		#|========================================================
-		#| LOAD MODEL AND TOKENIZER
-		model_path = args.model
-		model, tokenizer = load_model(model_path, args, device)
-		#|=========================================================
-		#| PREPARE THE RESTRICTOR
-		VOCAB = [*range(len(tokenizer))]
-		tiempo_total = 0
-		iteraciones = 0
-		
-		#|=========================================================
-		#| GET IN THE RIGHT PLACE
+	#| PREPARE DOCUMENT TO WRITE
+	if args.output:
+		file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
+	else:
+		file_name = '{0}/imt_{1}.{2}'.format(args.folder, args.model_name, args.target)
+	file_out = open(file_name, 'w')
+	file_out.write(str(args))
+	file_out.write("\n")
+	#|========================================================
+	#| LOAD MODEL AND TOKENIZER
+	model_path = args.model
+	model, tokenizer = load_model(model_path, args, device)
+	#|=========================================================
+	#| PREPARE THE RESTRICTOR
+	VOCAB = [*range(len(tokenizer))]
+	tiempo_total = 0
+	iteraciones = 0
+	
+	#|=========================================================
+	#| GET IN THE RIGHT PLACE
 
-		total_words = 0
-		total_chars = 0
-		for line in trg_lines[:args.initial]:
-			total_words += len(tokenize(line))
-			total_chars += len(line)
-		total_ws = total_words * args.word_stroke
-		total_ma = total_chars * args.mouse_action
-		#|=========================================================s	
-		for i in range(args.initial, len(src_lines)):
-			#if i<1280-1:
-			#	continue
-			# Save the SRC and TRG sentences
-			c_src = src_lines[i]
-			c_trg = ' '.join(tokenize(trg_lines[i]))
+	total_words = 0
+	total_chars = 0
+	for line in trg_lines[:args.initial]:
+		total_words += len(tokenize(line))
+		total_chars += len(line)
+	total_ws = total_words * args.word_stroke
+	total_ma = total_chars * args.mouse_action
+	#|=========================================================s	
+	for i in range(args.initial, len(src_lines)):
+		#if i<1280-1:
+		#	continue
+		# Save the SRC and TRG sentences
+		c_src = src_lines[i]
+		c_trg = ' '.join(tokenize(trg_lines[i]))
 
-			mouse_actions = 0
-			word_strokes = 0
-			n_words = len(tokenize(trg_lines[i]))
-			n_chars = len(trg_lines[i])
+		mouse_actions = 0
+		word_strokes = 0
+		n_words = len(tokenize(trg_lines[i]))
+		n_chars = len(trg_lines[i])
 
-			# Convert them to ids
-			encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
-			#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
+		# Convert them to ids
+		encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
+		#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 
-			# Prints
+		# Prints
+		if args.verbose:
+			'''aux = tokenize(c_trg)
+			aux = ' '.join([aux[idx] + '(' + str(idx) + ')' for idx in range(len(aux))])
+			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,aux))'''
+			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+
+		ite = 0
+		MAX_TOKENS = 256
+		restrictor = Restrictor(VOCAB,tokenizer,len(tokenize(c_trg)))
+		ended = False
+		ini = time()
+		generated_tokens = model.generate(**encoded_src,
+								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+								max_new_tokens=MAX_TOKENS).tolist()[0]
+		tiempo_total += time() - ini 
+		iteraciones += 1
+		if len(generated_tokens) >= MAX_TOKENS:
+			MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+		output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+
+		if args.verbose:
+			print("ITE {0}: {1}".format(ite, output))
+		while not ended:
+			# Generate the translation
+			ite += 1
+
+			actions, corrections, ended = restrictor.check_segments(c_trg, output,verbose=args.verbose)
+			word_strokes += corrections
+			mouse_actions += actions + 1
 			if args.verbose:
-				'''aux = tokenize(c_trg)
-				aux = ' '.join([aux[idx] + '(' + str(idx) + ')' for idx in range(len(aux))])
-				print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,aux))'''
-				print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+				print('Mouse actions:',actions + 1)
+				print('Word strokes:',corrections)
 
-			ite = 0
-			MAX_TOKENS = 256
-			restrictor = Restrictor(VOCAB,tokenizer,len(tokenize(c_trg)))
-			ended = False
-			ini = time()
-			generated_tokens = model.generate(**encoded_src,
-									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-									max_new_tokens=MAX_TOKENS).tolist()[0]
-			tiempo_total += time() - ini 
-			iteraciones += 1
-			if len(generated_tokens) >= MAX_TOKENS:
-				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-			output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+			if not ended:
+				restrictor.prepare()
 
-			if args.verbose:
-				print("ITE {0}: {1}".format(ite, output))
-			while not ended:
-				# Generate the translation
-				ite += 1
+				ini = time()
+				raw_output = model.generate(**encoded_src,
+								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+								max_new_tokens=MAX_TOKENS,
+								prefix_allowed_tokens_fn=restrictor.restrict)
+				tiempo_total += time() - ini
+				iteraciones += 1
+				generated_tokens = raw_output.tolist()[0]
+				if len(generated_tokens) >= MAX_TOKENS:
+					MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
+				elif len(generated_tokens) > 3/4 * MAX_TOKENS:
+					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+				#output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+				output = restrictor.decode(generated_tokens)
 
-				actions, corrections, ended = restrictor.check_segments(c_trg, output,verbose=args.verbose)
-				word_strokes += corrections
-				mouse_actions += actions + 1
 				if args.verbose:
-					print('Mouse actions:',actions + 1)
-					print('Word strokes:',corrections)
+					#print("ITE_TOK({0}): {1}".format(len(generated_tokens),generated_tokens))
+					print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
 
-				if not ended:
-					restrictor.prepare()
+			#file_out.write("{}\n".format(output[0]))
+		total_words += n_words
+		total_chars += n_chars
+		total_ws += word_strokes
+		total_ma += mouse_actions
+		
+		#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
+		#print("Total Mouse Actions: {}".format(mouse_actions))
+		#print("Total Word Strokes: {}".format(word_strokes))
 
-					ini = time()
-					raw_output = model.generate(**encoded_src,
-									forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-									max_new_tokens=MAX_TOKENS,
-									prefix_allowed_tokens_fn=restrictor.restrict)
-					tiempo_total += time() - ini
-					iteraciones += 1
-					generated_tokens = raw_output.tolist()[0]
-					if len(generated_tokens) >= MAX_TOKENS:
-						MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
-					elif len(generated_tokens) > 3/4 * MAX_TOKENS:
-						MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-					#output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-					output = restrictor.decode(generated_tokens)
-
-					if args.verbose:
-						#print("ITE_TOK({0}): {1}".format(len(generated_tokens),generated_tokens))
-						print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
-
-				#file_out.write("{}\n".format(output[0]))
-			total_words += n_words
-			total_chars += n_chars
-			total_ws += word_strokes
-			total_ma += mouse_actions
-			
-			#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
-			#print("Total Mouse Actions: {}".format(mouse_actions))
-			#print("Total Word Strokes: {}".format(word_strokes))
-
-			output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f} TIME: {3:4f}".format(i, total_ws/total_words, total_ma/total_chars, tiempo_total)
-			#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
-			if args.verbose:
-				print(output_txt)
-				print("\n")
-			file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f} TIME: {3:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i, tiempo_total))
-			#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
-			file_out.flush()
-		output_txt = f"TOTAL => WSR: {total_ws/total_words} - MAR: {total_ma/total_chars} - TIME: {tiempo_total/iteraciones}\n"
-		file_out.write(output_txt)
-		file_out.close()
+		output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f} TIME: {3:4f}".format(i, total_ws/total_words, total_ma/total_chars, tiempo_total)
+		#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
 		if args.verbose:
 			print(output_txt)
-	except:
-		output_txt = f"TOTAL => WSR: {total_ws/total_words} - MAR: {total_ma/total_chars} - TIME: {tiempo_total/iteraciones}\n"
-		file_out.write(output_txt)
-		file_out.close()
-		if args.verbose:
-			print(output_txt)
+			print("\n")
+		file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f} TIME: {3:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i, tiempo_total))
+		#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
+		file_out.flush()
+	output_txt = f"TOTAL => WSR: {total_ws/total_words} - MAR: {total_ma/total_chars} - TIME: {tiempo_total/iteraciones}\n"
+	file_out.write(output_txt)
+	file_out.close()
+	print(output_txt)
+	#except:
+
+	#	file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
+	#	file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
+	#	file_out.close()
 
 def check_language_code(code):
 	if code=='ar':			# Arabic
