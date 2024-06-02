@@ -10,6 +10,8 @@ NLLB, many-to-many -> https://huggingface.co/docs/transformers/model_doc/nllb
 
 bloom, 560M parametros, PROMT -> https://huggingface.co/bigscience/bloom-560m
 
+Seamless -> https://huggingface.co/facebook/seamless-m4t-v2-large
+
 tower, sobre Llama, PROMT (6.738.472.960 parametros) → https://huggingface.co/Unbabel/TowerInstruct-7B-v0.2
 
 MT5 , ¿PROMT? (582.401.280 parametros) -> https://huggingface.co/google/mt5-base

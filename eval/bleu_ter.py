@@ -4,14 +4,29 @@ import sys
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
 import evaluate
+import bitsandbytes as bnb
 from tqdm import tqdm
 from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
 						  M2M100ForConditionalGeneration, M2M100Tokenizer,
 						  AutoModelForSeq2SeqLM, AutoTokenizer,
-                          TranslationPipeline)
+                          TranslationPipeline, MT5ForConditionalGeneration)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
+
+class TranslationPipelineWithProgress:
+    def __init__(self, model,tokenizer, batch_size, device):
+        self.translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=batch_size, device=device)
+        self.batch_size = batch_size
+
+    def __call__(self, texts, **kwargs):
+        translations = []
+        # Process texts in batches
+        for i in tqdm(range(0, len(texts), self.batch_size), desc="Traduciendo", unit="batch"):
+            batch_texts = texts[i:i + self.batch_size]
+            batch_translations = self.translator(batch_texts, **kwargs)
+            translations.extend([t['translation_text'] for t in batch_translations])
+        return translations
 
 def read_file(name):
 	file_r = open(name, 'r')
@@ -57,7 +72,7 @@ def check_prefix(target, hyp):
 
 def load_model(model_path, args, _dev=None):
 	if args.model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path,attn_implementation="flash_attention_2").to(_dev)
 		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'm2m':
 		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
@@ -65,7 +80,7 @@ def load_model(model_path, args, _dev=None):
 	elif args.model_name == 'flant5':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path).to(_dev)
 		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",src_lang=args.source_code, tgt_lang=args.target_code)
-	elif model_name == 'mt5':
+	elif args.model_name == 'mt5':
 		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path).to(_dev)
 		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
 	else:
@@ -81,6 +96,10 @@ def translate(args):
 	src_lines = read_file(file_name)
 	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
 	trg_lines = read_file(file_name)
+	if 't5' in args.model_name:
+		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
+		prefix = f'translate from {extend[args.source]} to {extend[args.target]}: '
+		src_lines = [prefix + l for l in src_lines]
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
@@ -89,7 +108,7 @@ def translate(args):
 	MAX_TOKENS = 400
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
-	translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
+	translator = TranslationPipelineWithProgress(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
 	#|========================================================
 	#| TRANSLATE
 	print('Traduciendo...')
@@ -237,6 +256,7 @@ def read_parameters():
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','mt5'], help="Model to load")
 	parser.add_argument('-b','--batch_size',required=False,default=64,type=int,help='Batch size for the inference')
+	parser.add_argument('-quant','--quantize',action='store_true',help='Whether to quantize the model or not')
 
 	args = parser.parse_args()
 	return args

@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 from tabulate import tabulate
 from argparse import ArgumentParser
 import numpy as np
+import os
+
+BAR_WIDTH = 0.35
+XTICKS = [('fr','en'),('en','fr'),('es','en'),('en','es'),('de','en'),('en','de')]
 
 def get_latex(data):
     data_tex = data.copy()
@@ -43,47 +47,100 @@ def plot_table(data,show_prefix=True):
     plt.title('Segment-based')
     plt.show()
 
+def plot_bleu(data, filename):
+    num_series = len(data['modelo'].unique())
+    plt.figure()
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['bleu'].values.item() for src,trg in XTICKS]
+        serie = [x*100 for x in serie]
+        plt.bar(np.arange(6)+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(np.arange(6), ['-'.join(x) for x in XTICKS])
+    plt.xlabel('Pares de idiomas')
+    plt.ylabel('BLEU (%)')
+    plt.legend()
+    plt.savefig(filename)
+
+def plot_ter(data,filename):
+    num_series = len(data['modelo'].unique())
+    plt.figure()
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['ter'].values.item() for src,trg in XTICKS]
+        serie = [x*100 for x in serie]
+        plt.bar(np.arange(6)+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(np.arange(6), ['-'.join(x) for x in XTICKS])
+    plt.xlabel('Pares de idiomas')
+    plt.ylabel('TER (%)')
+    plt.legend()
+    plt.savefig(filename)    
+
+def plot_wsr(data,filename):
+    num_series = len(data['modelo'].unique())
+    plt.figure()
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for src,trg in XTICKS]
+        serie = [x*100 for x in serie]
+        plt.bar(np.arange(6)+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(np.arange(6), ['-'.join(x) for x in XTICKS])
+    plt.xlabel('Pares de idiomas')
+    plt.ylabel('WSR (%)')
+    plt.legend()
+    plt.savefig(filename)
+
+def plot_mar(data,filename):
+    num_series = len(data['modelo'].unique())
+    plt.figure()
+    for i, modelo in enumerate(data['modelo'].unique()):
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for src,trg in XTICKS]
+        serie = [x*100 for x in serie]
+        plt.bar(np.arange(6)+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(np.arange(6), ['-'.join(x) for x in XTICKS])
+    plt.xlabel('Pares de idiomas')
+    plt.ylabel('MAR (%)')
+    plt.legend()
+    plt.savefig(filename)
+
 def plot_chart(data):
     x = np.arange(6)
-    xticks = [('fr','en'),('en','fr'),('es','en'),('en','es'),('de','en'),('en','de')]
     data = data[data['metodo'] != 'prefix']
-    bar_width = 0.35
     num_series = len(data['modelo'].unique())
 
     plt.figure()
     plt.subplot(2,2,1)
     for i, modelo in enumerate(data['modelo'].unique()):
-        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['bleu'].values.item() for src,trg in xticks]
-        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
-    plt.xticks(x, ['-'.join(x) for x in xticks])
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['bleu'].values.item() for src,trg in XTICKS]
+        plt.bar(x+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in XTICKS])
     plt.title('BLEU')
     plt.legend()
 
     plt.subplot(2,2,2)
     for i, modelo in enumerate(data['modelo'].unique()):
-        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['ter'].values.item() for src,trg in xticks]
-        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
-    plt.xticks(x, ['-'.join(x) for x in xticks])
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['ter'].values.item() for src,trg in XTICKS]
+        plt.bar(x+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in XTICKS])
     plt.title('TER')
+    plt.legend()
     
     plt.subplot(2,2,3)
     for i, modelo in enumerate(data['modelo'].unique()):
-        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for src,trg in xticks]
-        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
-    plt.xticks(x, ['-'.join(x) for x in xticks])
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for src,trg in XTICKS]
+        plt.bar(x+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in XTICKS])
     plt.title('WSR')
+    plt.legend()
 
     plt.subplot(2,2,4)
     for i, modelo in enumerate(data['modelo'].unique()):
-        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for src,trg in xticks]
-        plt.bar(x+bar_width*i-(num_series-1)*bar_width/2,serie, bar_width, label=modelo)
-    plt.xticks(x, ['-'.join(x) for x in xticks])
+        serie = [data[(data['modelo'] == modelo) & (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for src,trg in XTICKS]
+        plt.bar(x+BAR_WIDTH*i-(num_series-1)*BAR_WIDTH/2,serie, BAR_WIDTH, label=modelo)
+    plt.xticks(x, ['-'.join(x) for x in XTICKS])
     plt.title('MAR')
+    plt.legend()
     plt.show()
 
 parser = ArgumentParser()
 parser.add_argument('-f','--file', type=str, default='test.csv', help='Archivo que leer')
-parser.add_argument('-o','--output', type=str, default='tabla.txt', help='Archivo donde guardar la tabla')
+parser.add_argument('-o','--output', type=str, default='figuras', help='Directorio donde guardar las tablas y figuras')
 parser.add_argument('-p','--plot', action='store_true', help='Mostrar tabla en gráficos')
 parser.add_argument('-graf','--grafico', action='store_true', help='Mostrar tabla en gráficos')
 parser.add_argument('-pref','--prefix', action='store_true', help='Mostrar tabla de prefijos')
@@ -94,6 +151,7 @@ args = parser.parse_args()
 data = pd.read_csv(args.file)
 if args.modelo:
     data = data[data['modelo'] == args.modelo]
+    data = data.drop(columns='modelo')
 if args.grafico:
     plot_chart(data)
 
@@ -106,9 +164,18 @@ else:
 
 if not args.prefix:
     data = data[data['metodo'] != 'prefix']
+    data = data.drop(columns='metodo')
 
+if not os.path.exists(args.output):
+    os.makedirs(args.output)
 latex_table = get_latex(data)
-with open(args.output, 'w') as f:
+with open(os.path.join(args.output,'tabla.tex'), 'w') as f:
     f.write(latex_table)
+if args.opcion != 'wsr_mar':
+    plot_bleu(data,os.path.join(args.output,'bleu.png'))
+    plot_ter(data,os.path.join(args.output,'ter.png'))
+if args.opcion != 'bleu_ter':
+    plot_wsr(data,os.path.join(args.output,'wsr.png'))
+    plot_mar(data,os.path.join(args.output,'mar.png'))
 if args.plot:
     plot_table(data, args.prefix)

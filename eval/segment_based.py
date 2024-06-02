@@ -13,7 +13,9 @@ import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           M2M100ForConditionalGeneration, M2M100Tokenizer,
-                          MBart50TokenizerFast, MBartForConditionalGeneration)
+                          MBart50TokenizerFast, MBartForConditionalGeneration,
+						  MT5ForConditionalGeneration,
+						  BitsAndBytesConfig)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
@@ -291,22 +293,36 @@ def tokenize(sentence):
 		tokens[idx] = t
 	return tokens
 
-def load_model(model_path, args, _dev=None):
+def load_model(model_path, args, _dev=None,quantize=False):
+	kwargs = {}
+	if quantize:
+		kwargs['quantization_config'] = BitsAndBytesConfig(load_in_8bit=True,device=_dev)
 	if args.model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained(model_path).to(_dev)
-		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path,
+													   attn_implementation="flash_attention_2",
+													   **kwargs)
+		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", 
+											  src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'm2m':
-		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
-		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", src_lang=args.source_code, tgt_lang=args.target_code)
+		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path
+														**kwargs)
+		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", 
+										 src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'flant5':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path).to(_dev)
-		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",src_lang=args.source_code, tgt_lang=args.target_code)
-	elif model_name == 'mt5':
-		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path).to(_dev)
-		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path,
+											   **kwargs)
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",
+									   src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'mt5':
+		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path,
+													 **kwargs)
+		_tok = AutoTokenizer.from_pretrained("google/mt5-small",
+									   src_lang=args.source_code, tgt_lang=args.target_code)
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
+	if not quantize:
+		_mdl.to(_dev)
 	return _mdl, _tok
 	
 def translate(args):
@@ -324,6 +340,11 @@ def translate(args):
 	else:
 		trg_lines = read_file(file_name)
 
+	if 't5' in args.model_name:
+		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
+		prefix = f'translate from {extend[args.source]} to {extend[args.target]}: '
+		src_lines = [prefix + l for l in src_lines]
+
 	#| PREPARE DOCUMENT TO WRITE
 	if args.output:
 		file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
@@ -335,7 +356,7 @@ def translate(args):
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
-	model, tokenizer = load_model(model_path, args, device)
+	model, tokenizer = load_model(model_path, args, device,args.quantize)
 	#|=========================================================
 	#| PREPARE THE RESTRICTOR
 	VOCAB = [*range(len(tokenizer))]
@@ -588,6 +609,7 @@ def read_parameters():
 	parser.add_argument("-fin","--final",required=False, default=-1,type=int,help="Final Line")
 	parser.add_argument("-wsr","--word_stroke", required=False, default=0, type=float, help="Last word stroke ratio")
 	parser.add_argument("-mar","--mouse_action", required=False, default=0, type=float, help="Last mouse action ratio")
+	parser.add_argument('-quant','--quantize',action='store_true',help='Whether to quantize the model or not')
 	parser.add_argument("-v","--verbose", required=False, default=False, action='store_true', help="Verbose mode")
 
 	args = parser.parse_args()
