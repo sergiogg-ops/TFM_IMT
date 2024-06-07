@@ -28,7 +28,6 @@ class Restrictor():
 		self.vocab = vocab
 		self.tokenizer = tokenizer
 		self.start_toks = [value for key,value in self.tokenizer.get_vocab().items() if key[0] == '▁']
-		#self.start_toks = [value for key,value in self.tokenizer.get_vocab().items() if not key[0].isalpha()]
 		self.eos = self.tokenizer.get_vocab()[tokenizer.eos_token]
 		if self.eos in self.start_toks:
 			self.start_toks.remove(self.eos)
@@ -46,8 +45,6 @@ class Restrictor():
 		# tokenizar strings
 		tgt = tokenize(tgt)
 		hyp = tokenize(hyp)
-		print(tgt)
-		print(hyp)
 
 		lent, lenh = len(tgt), len(hyp)
 		dp = self.cruce(tgt,hyp,lent,lenh)
@@ -176,13 +173,17 @@ class Restrictor():
 			tgt = self.lcs(dp,tgt,fin_lcs[0]+1,fin_t,fin_lcs[1]+1,fin_h)
 		return tgt
 	
-	def prepare(self):
-		self.tok_segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
+	def prepare(self, model_name):
+		if 't5' in model_name:
+			self.tok_segments = [self.tokenizer.encode(s)[:-1] for s in self.segments]
+		else:
+			self.tok_segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
+		print(self.tok_segments)
 	
 	def restrict(self,batch_id, input_ids):
 		#if self.mierdaenbote % 10 == 0:
 		#	print(self.tok_segments)
-		#self.mierdaenbote += 1
+		self.mierdaenbote += 1
 		idx_seg, idx_tok,last_match = self.get_state(input_ids)
 		#print(idx_seg, idx_tok,last_match,len(input_ids))
 		#print(input_ids.tolist())
@@ -293,9 +294,17 @@ def tokenize(sentence):
 		tokens[idx] = t
 	return tokens
 
-def load_model(model_path, args, _dev=None,quantize=False):
+def detokenize(sentence):
+	sentence = sentence.replace(' \' ', '\'')
+	sentence = sentence.replace(' . ', '.')
+	sentence = sentence.replace(' , ', ',')
+	sentence = sentence.replace(' - ', '-')
+	tokens = wordTokenizer.tokenize(sentence)
+	return tokens
+
+def load_model(model_path, args, _dev=None):
 	kwargs = {}
-	if quantize:
+	if args.quantize:
 		kwargs['quantization_config'] = BitsAndBytesConfig(load_in_8bit=True,device=_dev)
 	if args.model_name == 'mbart':
 		_mdl = MBartForConditionalGeneration.from_pretrained(model_path,
@@ -311,7 +320,7 @@ def load_model(model_path, args, _dev=None,quantize=False):
 	elif args.model_name == 'flant5':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path,
 											   **kwargs)
-		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base",
 									   src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'mt5':
 		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path,
@@ -321,7 +330,7 @@ def load_model(model_path, args, _dev=None,quantize=False):
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
-	if not quantize:
+	if not args.quantize:
 		_mdl.to(_dev)
 	return _mdl, _tok
 	
@@ -356,7 +365,7 @@ def translate(args):
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
-	model, tokenizer = load_model(model_path, args, device,args.quantize)
+	model, tokenizer = load_model(model_path, args, device)
 	#|=========================================================
 	#| PREPARE THE RESTRICTOR
 	VOCAB = [*range(len(tokenizer))]
@@ -392,9 +401,6 @@ def translate(args):
 
 		# Prints
 		if args.verbose:
-			'''aux = tokenize(c_trg)
-			aux = ' '.join([aux[idx] + '(' + str(idx) + ')' for idx in range(len(aux))])
-			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,aux))'''
 			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
 
 		ite = 0
@@ -403,13 +409,13 @@ def translate(args):
 		ended = False
 		ini = time()
 		generated_tokens = model.generate(**encoded_src,
-								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+								#forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 								max_new_tokens=MAX_TOKENS).tolist()[0]
+		output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 		tiempo_total += time() - ini 
 		iteraciones += 1
 		if len(generated_tokens) >= MAX_TOKENS:
 			MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-		output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
 
 		if args.verbose:
 			print("ITE {0}: {1}".format(ite, output))
@@ -425,25 +431,25 @@ def translate(args):
 				print('Word strokes:',corrections)
 
 			if not ended:
-				restrictor.prepare()
+				restrictor.prepare(args.model_name)
 
 				ini = time()
 				raw_output = model.generate(**encoded_src,
-								forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
+								#forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 								max_new_tokens=MAX_TOKENS,
 								prefix_allowed_tokens_fn=restrictor.restrict)
+				generated_tokens = raw_output.tolist()[0]
+				#output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+				output = restrictor.decode(generated_tokens)
 				tiempo_total += time() - ini
 				iteraciones += 1
-				generated_tokens = raw_output.tolist()[0]
 				if len(generated_tokens) >= MAX_TOKENS:
 					MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
 				elif len(generated_tokens) > 3/4 * MAX_TOKENS:
 					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-				#output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-				output = restrictor.decode(generated_tokens)
 
 				if args.verbose:
-					#print("ITE_TOK({0}): {1}".format(len(generated_tokens),generated_tokens))
+					#print('ITE TOK:', generated_tokens)
 					print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
 
 			#file_out.write("{}\n".format(output[0]))

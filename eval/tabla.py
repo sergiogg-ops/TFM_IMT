@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 import numpy as np
 import os
 
-BAR_WIDTH = 0.35
+BAR_WIDTH = 0.2
 XTICKS = [('fr','en'),('en','fr'),('es','en'),('en','es'),('de','en'),('en','de')]
 
 def get_latex(data):
@@ -142,7 +142,7 @@ parser = ArgumentParser()
 parser.add_argument('-f','--file', type=str, default='test.csv', help='Archivo que leer')
 parser.add_argument('-o','--output', type=str, default='figuras', help='Directorio donde guardar las tablas y figuras')
 parser.add_argument('-p','--plot', action='store_true', help='Mostrar tabla en gráficos')
-parser.add_argument('-graf','--grafico', action='store_true', help='Mostrar tabla en gráficos')
+parser.add_argument('-graf','--grafico', action='store_true', help='Mostrar gráficos')
 parser.add_argument('-pref','--prefix', action='store_true', help='Mostrar tabla de prefijos')
 parser.add_argument('-opt','--opcion', type=str, default='general', choices=['general','bleu_ter','wsr_mar'],help='Opción de tabla a mostrar')
 parser.add_argument('-m','--modelo', type=str, help='Modelo a mostrar')

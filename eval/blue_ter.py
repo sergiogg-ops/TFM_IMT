@@ -79,7 +79,7 @@ def load_model(model_path, args, _dev=None):
 		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'flant5':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path).to(_dev)
-		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",src_lang=args.source_code, tgt_lang=args.target_code)
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base",src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'mt5':
 		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path).to(_dev)
 		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
