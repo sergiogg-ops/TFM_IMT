@@ -72,20 +72,28 @@ def check_prefix(target, hyp):
 
 def load_model(model_path, args, _dev=None):
 	if args.model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained(model_path,attn_implementation="flash_attention_2").to(_dev)
-		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", src_lang=args.source_code, tgt_lang=args.target_code)
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path,
+											attn_implementation="flash_attention_2")
+		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", 
+											src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'm2m':
-		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path).to(_dev)
-		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", src_lang=args.source_code, tgt_lang=args.target_code)
+		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path)
+		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", 
+											src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'flant5':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path).to(_dev)
-		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small",src_lang=args.source_code, tgt_lang=args.target_code)
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small")
 	elif args.model_name == 'mt5':
-		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path).to(_dev)
+		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path)
 		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
+	elif args.model_name == 'nllb':
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
+											src_lang=args.source_code, tgt_lang=args.target_code)
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
+	_mdl.to(_dev)
 	return _mdl, _tok
 
 def translate(args):
@@ -98,8 +106,8 @@ def translate(args):
 	trg_lines = read_file(file_name)
 	if 't5' in args.model_name:
 		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
-		prefix = f'translate from {extend[args.source]} to {extend[args.target]}: '
-		src_lines = [prefix + l for l in src_lines]
+		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
+		src_lines = [prompt + l for l in src_lines]
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
@@ -112,9 +120,8 @@ def translate(args):
 	#|========================================================
 	#| TRANSLATE
 	print('Traduciendo...')
-	translation = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
-	hypothesis = [t['translation_text'] for t in translation]
-	print(type(translation))
+	hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
+	#hypothesis = [t['translation_text'] for t in translation]
 	print('Evaluando metricas...')
 	bleu = bleu_metric.compute(predictions=hypothesis,references=trg_lines)
 	ter = ter_metric.compute(predictions=hypothesis,references=trg_lines)
@@ -254,9 +261,8 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-p","--partition", required=False, default="test", choices=["dev","test"], help="Partition to load")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
-	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','mt5'], help="Model to load")
+	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','mt5','nllb'], help="Model to load")
 	parser.add_argument('-b','--batch_size',required=False,default=64,type=int,help='Batch size for the inference')
-	parser.add_argument('-quant','--quantize',action='store_true',help='Whether to quantize the model or not')
 
 	args = parser.parse_args()
 	return args

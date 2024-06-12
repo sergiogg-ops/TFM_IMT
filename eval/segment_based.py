@@ -27,7 +27,8 @@ class Restrictor():
 		# Vocabulario
 		self.vocab = vocab
 		self.tokenizer = tokenizer
-		self.start_toks = [value for key,value in self.tokenizer.get_vocab().items() if key[0] == '▁']
+		self.start_char = '▁'
+		self.start_toks = [value for key,value in self.tokenizer.get_vocab().items() if key[0] == self.start_char]
 		self.eos = self.tokenizer.get_vocab()[tokenizer.eos_token]
 		if self.eos in self.start_toks:
 			self.start_toks.remove(self.eos)
@@ -178,7 +179,6 @@ class Restrictor():
 			self.tok_segments = [self.tokenizer.encode(s)[:-1] for s in self.segments]
 		else:
 			self.tok_segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
-		print(self.tok_segments)
 	
 	def restrict(self,batch_id, input_ids):
 		#if self.mierdaenbote % 10 == 0:
@@ -248,29 +248,39 @@ class Restrictor():
 			return cur_seg, -1, last_pos
 
 	def decode(self,input_ids):
-		idx_seg = 0
-		idx_tok = 0
+		idx_seg = 0 # indice de segmentos
+		idx_tok = 0 # indice de token en segmentos
 		texto = ''
 		begin = 0
-		for tok in range(len(input_ids)):
+		tok = 0
+		while tok < len(input_ids):
 			if idx_seg < len(self.tok_segments) and input_ids[tok] == self.tok_segments[idx_seg][idx_tok]:
 				if input_ids[tok] == self.tokenizer.unk_token_id:
+					# parte del segmento de antes de <unk>
 					first = self.tokenizer.decode(self.tok_segments[idx_seg][:idx_tok], skip_special_tokens=True)
 					first = ' '.join(tokenize(first))
-					ini = len(first)
+					ini = len(first) + self.tok_segments[idx_seg][:idx_tok].count(self.tokenizer.unk_token_id)
+					# correspondencia de <unk> con la parte de la palabra que le toca
 					word = self.segments[idx_seg][ini:].split()[0]
+					next_tok = self.tokenizer.convert_ids_to_tokens(input_ids[tok+1]) if tok+1 < len(input_ids) else ''
+					if next_tok[0] == self.start_char:
+						next_tok = next_tok	[1:]
+					index = word.index(next_tok) if next_tok in word else len(word)
+					word = word[:index]
 					texto += self.tokenizer.decode(input_ids[begin:tok], skip_special_tokens=True)
+					# gestion de espacios antes y despues de <unk>
 					if ini == 0 or self.segments[idx_seg][ini] == ' ':
 						texto += ' '
 						ini += self.segments[idx_seg][ini] == ' '
 					texto += word
 					if ini+len(word) >= len(self.segments[idx_seg]) or self.segments[idx_seg][ini+len(word)] == ' ':
-						texto += ' ' 
+						texto += ' '
 					begin = tok + 1
 				idx_tok += 1
 				if idx_tok == len(self.tok_segments[idx_seg]):
 					idx_seg += 1
 					idx_tok = 0
+			tok += 1
 		if begin < len(input_ids):
 			texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
 		return texto
@@ -327,6 +337,10 @@ def load_model(model_path, args, _dev=None):
 													 **kwargs)
 		_tok = AutoTokenizer.from_pretrained("google/mt5-small",
 									   src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'nllb':
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
+											src_lang=args.source_code, tgt_lang=args.target_code)
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -351,8 +365,8 @@ def translate(args):
 
 	if 't5' in args.model_name:
 		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
-		prefix = f'translate from {extend[args.source]} to {extend[args.target]}: '
-		src_lines = [prefix + l for l in src_lines]
+		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
+		src_lines = [prompt + l for l in src_lines]
 
 	#| PREPARE DOCUMENT TO WRITE
 	if args.output:
@@ -609,7 +623,7 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-out", "--output", required=False, help="Output file")
-	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5'], help='Model name')
+	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb'], help='Model name')
 	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-fin","--final",required=False, default=-1,type=int,help="Final Line")

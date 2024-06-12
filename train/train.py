@@ -31,7 +31,7 @@ class Europarl(torch.utils.data.Dataset):
 		self.tgt = []
 		with open(target,'r') as file:
 			self.tgt = [l for l in file]
-		self.tgt = [prefix + l for l in self.tgt]
+		self.tgt = [l for l in self.tgt]
 		self.tok = tok
     
 	def __len__(self):
@@ -47,17 +47,17 @@ def get_device():
 
 def load_model(model_name, _dev=None):
 	if model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained('facebook/mbart-large-50-many-to-many-mmt',attn_implementation="flash_attention_2").to(_dev)
+		_mdl = 	MBartForConditionalGeneration.from_pretrained('facebook/mbart-large-50-many-to-many-mmt').to(_dev)
 	elif model_name == 'm2m':
 		_mdl = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M").to(_dev)
 	elif model_name == 'flant5':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small",attn_implementation="flash_attention_2")
-		#_mdl = AutoModelForSeq2SeqLM.from_pretrained("models/flant5_enfr/checkpoint-180000")
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
 	elif model_name == 'mt5':
-		#_mdl = MT5ForConditionalGeneration.from_pretrained("google/mt5-small",attn_implementation="flash_attention_2")
-		_mdl = MT5ForConditionalGeneration.from_pretrained("models/",attn_implementation="flash_attention_2")
+		_mdl = MT5ForConditionalGeneration.from_pretrained("google/mt5-small")
 	elif model_name == 'llama3':
-		_mdl = AutoModelForCausalLM.from_pretrained("meta-llama/Meta-Llama-3-8B",attn_implementation="flash_attention_2")
+		_mdl = AutoModelForCausalLM.from_pretrained("meta-llama/Meta-Llama-3-8B")
+	elif model_name == 'nllb':
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
@@ -66,15 +66,17 @@ def load_model(model_name, _dev=None):
 
 def load_tokenizer(args):
 	if args.model_name == 'mbart':
-		_tok = MBart50TokenizerFast.from_pretrained(f'acebook/mbart-large-50-many-to-many-mmt')
+		_tok = MBart50TokenizerFast.from_pretrained('facebook/mbart-large-50-many-to-many-mmt')
 	elif args.model_name == 'm2m':
 		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
 	elif args.model_name == 'flant5':
-		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small")
+		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base")
 	elif args.model_name == 'mt5':
 		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
 	elif args.model_name == 'llama3':
 		_tok = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B")
+	elif args.model_name == 'nllb':
+		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -119,7 +121,7 @@ def load_datasets(args):
 	shards = [	f"{args.folder}dev.{args.source}",
 				f"{args.folder}dev.{args.target}"
 				]	
-	development = Europarl(shards[0],shards[1],TOKENIZER,src_lang=args.source,tgt_lang=args.target)
+	development = Europarl(shards[0],shards[1],TOKENIZER)
 
 	tokenized_dataset = DatasetDict({"train":training,"test":development})
 	return tokenized_dataset
@@ -259,18 +261,6 @@ def check_language_code(code):
 		print('Code not implemented')
 		sys.exit()
 
-def quantize_model(model):
-	for name, module in model.named_modules():
-		if isinstance(module, torch.nn.Linear):
-			quantized_module = bnb.nn.Linear8bitLt(
-				module.in_features, module.out_features, bias=module.bias is not None
-			)
-			quantized_module.weight.data = module.weight.data
-			if module.bias is not None:
-				quantized_module.bias.data = module.bias.data
-			setattr(model, name, quantized_module)
-	return model
-
 def check_parameters(args):
 	args.source_code = check_language_code(args.source) if args.model_name == 'mbart' else args.source
 	args.target_code = check_language_code(args.target) if args.model_name == 'mbart' else args.target
@@ -281,7 +271,7 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','mt5','llama3'],help='Model to train')
+	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','mt5','llama3','nllb'],help='Model to train')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
 	parser.add_argument('-quant','--quantize',action='store_true',help='Whether to quantize the model before training or not')
 	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
@@ -303,14 +293,18 @@ def main():
 	TOKENIZER = load_tokenizer(args)
 
 	if args.lora:
+		'''lora_config = LoraConfig(
+			r=16,
+			lora_alpha=16,
+			lora_dropout=0.1,
+		)'''
 		lora_config = LoraConfig(
 			r=16,
 			lora_alpha=16,
 			lora_dropout=0.1,
+			target_modules='all-linear'
 		)
 		MODEL = get_peft_model(MODEL, lora_config)
-	if args.quantize:
-		MODEL = quantize_model(MODEL)
 
 	dataset = load_datasets(args)
 
