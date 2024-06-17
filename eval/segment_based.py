@@ -248,42 +248,31 @@ class Restrictor():
 			return cur_seg, -1, last_pos
 
 	def decode(self,input_ids):
-		idx_seg = 0 # indice de segmentos
-		idx_tok = 0 # indice de token en segmentos
-		texto = ''
-		begin = 0
-		tok = 0
-		while tok < len(input_ids):
-			if idx_seg < len(self.tok_segments) and input_ids[tok] == self.tok_segments[idx_seg][idx_tok]:
-				if input_ids[tok] == self.tokenizer.unk_token_id:
-					# parte del segmento de antes de <unk>
-					first = self.tokenizer.decode(self.tok_segments[idx_seg][:idx_tok], skip_special_tokens=True)
-					first = ' '.join(tokenize(first))
-					ini = len(first) + self.tok_segments[idx_seg][:idx_tok].count(self.tokenizer.unk_token_id)
-					# correspondencia de <unk> con la parte de la palabra que le toca
-					word = self.segments[idx_seg][ini:].split()[0]
-					next_tok = self.tokenizer.convert_ids_to_tokens(input_ids[tok+1]) if tok+1 < len(input_ids) else ''
-					if next_tok[0] == self.start_char:
-						next_tok = next_tok	[1:]
-					index = word.index(next_tok) if next_tok in word else len(word)
-					word = word[:index]
-					texto += self.tokenizer.decode(input_ids[begin:tok], skip_special_tokens=True)
-					# gestion de espacios antes y despues de <unk>
-					if ini == 0 or self.segments[idx_seg][ini] == ' ':
-						texto += ' '
-						ini += self.segments[idx_seg][ini] == ' '
-					texto += word
-					if ini+len(word) >= len(self.segments[idx_seg]) or self.segments[idx_seg][ini+len(word)] == ' ':
-						texto += ' '
-					begin = tok + 1
-				idx_tok += 1
-				if idx_tok == len(self.tok_segments[idx_seg]):
-					idx_seg += 1
-					idx_tok = 0
-			tok += 1
-		if begin < len(input_ids):
-			texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
-		return texto
+			idx_seg = 0 # indice de segmentos
+			idx_tok = 0 # indice de token en segmentos
+			texto = ''
+			begin = 0
+			tok = 0
+			for tok in range(len(input_ids)):
+				if idx_seg < len(self.tok_segments) and input_ids[tok] == self.tok_segments[idx_seg][idx_tok]:
+					if input_ids[tok] == self.tokenizer.unk_token_id:
+						# parte de antes de <unk>
+						texto += self.tokenizer.decode(input_ids[begin:tok], skip_special_tokens=True)
+						# correspondencia de <unk> con la parte de la palabra que le toca
+						mapping = self.tokenizer(self.segments[idx_seg], return_offsets_mapping=True, return_special_tokens_mask=True)
+						metaoffset = sum(mapping['special_tokens_mask'][:idx_tok])
+						start_unk, end_unk = mapping['offset_mapping'][idx_tok+metaoffset]
+						texto += ' ' if start_unk > 0 and self.segments[idx_seg][start_unk-1] == ' ' else ''
+						texto += self.segments[idx_seg][start_unk:end_unk]
+						texto += ' ' if end_unk < len(self.segments[idx_seg]) and self.segments[idx_seg][end_unk] == ' ' else ''
+						begin = tok + 1
+					idx_tok += 1
+					if idx_tok == len(self.tok_segments[idx_seg]):
+						idx_seg += 1
+						idx_tok = 0
+			if begin < len(input_ids):
+				texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
+			return texto
 
 def read_file(name):
 	file_r = open(name, 'r')
@@ -323,24 +312,21 @@ def load_model(model_path, args, _dev=None):
 		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", 
 											  src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'm2m':
-		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path
-														**kwargs)
+		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path, **kwargs)
 		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", 
 										 src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'flant5':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path,
-											   **kwargs)
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base",
 									   src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'mt5':
-		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path,
-													 **kwargs)
+		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("google/mt5-small",
 									   src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'nllb':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
-											src_lang=args.source_code, tgt_lang=args.target_code)
+											src_lang=args.source_code, tgt_lang=args.target_code,)
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)

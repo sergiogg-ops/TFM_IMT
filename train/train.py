@@ -293,11 +293,6 @@ def main():
 	TOKENIZER = load_tokenizer(args)
 
 	if args.lora:
-		'''lora_config = LoraConfig(
-			r=16,
-			lora_alpha=16,
-			lora_dropout=0.1,
-		)'''
 		lora_config = LoraConfig(
 			r=16,
 			lora_alpha=16,
@@ -318,11 +313,13 @@ def main():
 		per_device_train_batch_size=args.batch_size,
 		per_device_eval_batch_size=args.batch_size,
 		weight_decay=0.01,
-		save_total_limit=3,
-		save_steps=10000,
+		save_total_limit=6,
+		save_steps=20000,
 		num_train_epochs=args.epochs,
 		predict_with_generate=True,
 		fp16=fp16,
+		load_best_model_at_end=True,
+		metric_for_best_model='bleu',
 		)
 
 	data_collator = DataCollatorForSeq2Seq(TOKENIZER, model=MODEL)
