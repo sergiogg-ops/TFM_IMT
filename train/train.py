@@ -317,9 +317,12 @@ def main():
 		save_steps=20000,
 		num_train_epochs=args.epochs,
 		predict_with_generate=True,
+		predict_with_generate_kwargs={'max_length':128},
+		max_new_tokens=128,
 		fp16=fp16,
 		load_best_model_at_end=True,
 		metric_for_best_model='bleu',
+
 		)
 
 	data_collator = DataCollatorForSeq2Seq(TOKENIZER, model=MODEL)
@@ -332,7 +335,8 @@ def main():
 		eval_dataset=dataset['test'],
 		data_collator=data_collator,
 		tokenizer=TOKENIZER,
-		compute_metrics=compute_metrics
+		compute_metrics=compute_metrics,
+		max_new_tokens=128,
 		)
 	results = trainer.evaluate()
 	print(f'Antes de fine-tunning:\n\tLoss = {results['eval_loss']:.4}\n\tBLEU = {results['eval_bleu']}')
