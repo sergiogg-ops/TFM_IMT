@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 import numpy as np
 import os
 
-BAR_WIDTH = 0.2
+BAR_WIDTH = 0.2 
 XTICKS = [('fr','en'),('en','fr'),('es','en'),('en','es'),('de','en'),('en','de')]
 
 def get_latex(data):
