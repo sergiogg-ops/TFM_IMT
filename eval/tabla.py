@@ -99,6 +99,16 @@ def plot_mar(data,filename):
     plt.legend()
     plt.savefig(filename)
 
+def plot_time(data,filename):
+    plt.figure()
+    plt.title('Tiempo de ejecución')
+    xlabels = data['modelo'].unique()
+    y = [min(data[data['modelo'] == modelo]['tiempo']) for modelo in xlabels]
+    plt.bar(xlabels,y)
+    plt.xticks(xlabels)
+    plt.ylabel('Tiempo (s)')
+    plt.savefig(filename)
+
 def plot_chart(data):
     x = np.arange(6)
     data = data[data['metodo'] != 'prefix']
@@ -144,11 +154,15 @@ parser.add_argument('-o','--output', type=str, default='figuras', help='Director
 parser.add_argument('-p','--plot', action='store_true', help='Mostrar tabla en gráficos')
 parser.add_argument('-graf','--grafico', action='store_true', help='Mostrar gráficos')
 parser.add_argument('-pref','--prefix', action='store_true', help='Mostrar tabla de prefijos')
-parser.add_argument('-opt','--opcion', type=str, default='general', choices=['general','bleu_ter','wsr_mar'],help='Opción de tabla a mostrar')
+parser.add_argument('-opt','--opcion', type=str, default='general', choices=['general','bleu_ter','wsr_mar','tiempos'],help='Opción de tabla a mostrar')
 parser.add_argument('-m','--modelo', type=str, help='Modelo a mostrar')
 args = parser.parse_args()
 
 data = pd.read_csv(args.file)
+
+if args.opcion == 'tiempos':
+    plot_time(data,os.path.join(args.output,'tiempos.png'))
+    exit()
 if args.modelo:
     data = data[data['modelo'] == args.modelo]
     data = data.drop(columns='modelo')
