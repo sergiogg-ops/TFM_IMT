@@ -247,7 +247,7 @@ class Restrictor():
 		else:
 			return cur_seg, -1, last_pos
 
-	def decode(self,input_ids):
+	def decode0(self,input_ids):
 			idx_seg = 0 # indice de segmentos
 			idx_tok = 0 # indice de token en segmentos
 			texto = ''
@@ -261,7 +261,7 @@ class Restrictor():
 						# correspondencia de <unk> con la parte de la palabra que le toca
 						mapping = self.tokenizer(self.segments[idx_seg], return_offsets_mapping=True, return_special_tokens_mask=True)
 						metaoffset = sum(mapping['special_tokens_mask'][:idx_tok])
-						start_unk, end_unk = mapping['offset_mapping'][idx_tok+metaoffset]
+						start_unk, end_unk = mapping['offset_mapping'][idx_tok+metaoffset]	
 						texto += ' ' if start_unk > 0 and self.segments[idx_seg][start_unk-1] == ' ' else ''
 						texto += self.segments[idx_seg][start_unk:end_unk]
 						texto += ' ' if end_unk < len(self.segments[idx_seg]) and self.segments[idx_seg][end_unk] == ' ' else ''
@@ -270,6 +270,22 @@ class Restrictor():
 					if idx_tok == len(self.tok_segments[idx_seg]):
 						idx_seg += 1
 						idx_tok = 0
+			if begin < len(input_ids):
+				texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
+			return texto
+
+	def decode(self,input_ids):
+			idx_seg = 0 # indice de segmentos
+			texto = ''
+			begin = 0
+			tok = 0
+			lengths = [len(seg) for seg in self.tok_segments]
+			for tok in range(len(input_ids)):
+				if idx_seg < len(self.tok_segments) and input_ids[(tok-lengths[idx_seg]):tok] == self.tok_segments[idx_seg]:
+					texto += self.tokenizer.decode(input_ids[begin:tok-lengths[idx_seg]]) + ' '
+					texto += self.segments[idx_seg] + ' '
+					begin = tok + 1
+					idx_seg += 1
 			if begin < len(input_ids):
 				texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
 			return texto
@@ -306,9 +322,7 @@ def load_model(model_path, args, _dev=None):
 	if args.quantize:
 		kwargs['quantization_config'] = BitsAndBytesConfig(load_in_8bit=True,device=_dev)
 	if args.model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained(model_path,
-													   attn_implementation="flash_attention_2",
-													   **kwargs)
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path, **kwargs)
 		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", 
 											  src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'm2m':
@@ -326,7 +340,10 @@ def load_model(model_path, args, _dev=None):
 	elif args.model_name == 'nllb':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
-											src_lang=args.source_code, tgt_lang=args.target_code,)
+											src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'bloom':
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+		_tok = AutoTokenizer.from_pretrained("bigscience/bloom-560m")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -349,7 +366,7 @@ def translate(args):
 	else:
 		trg_lines = read_file(file_name)
 
-	if 't5' in args.model_name:
+	if 't5' in args.model_name or args.model_name == 'bloom':
 		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
 		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
 		src_lines = [prompt + l for l in src_lines]
@@ -358,7 +375,7 @@ def translate(args):
 	if args.output:
 		file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
 	else:
-		file_name = '{0}/imt_{1}.{2}'.format(args.folder, args.model_name, args.target)
+		file_name = '{0}/sb_imt_{1}.{2}'.format(args.folder, args.model_name, args.target)
 	file_out = open(file_name, 'w')
 	file_out.write(str(args))
 	file_out.write("\n")
@@ -423,7 +440,7 @@ def translate(args):
 			# Generate the translation
 			ite += 1
 
-			actions, corrections, ended = restrictor.check_segments(c_trg, output,verbose=args.verbose)
+			actions, corrections, ended = restrictor.check_segments(c_trg, output, verbose=args.verbose)
 			word_strokes += corrections
 			mouse_actions += actions + 1
 			if args.verbose:
@@ -451,34 +468,21 @@ def translate(args):
 				if args.verbose:
 					#print('ITE TOK:', generated_tokens)
 					print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
-
-			#file_out.write("{}\n".format(output[0]))
 		total_words += n_words
 		total_chars += n_chars
 		total_ws += word_strokes
 		total_ma += mouse_actions
-		
-		#print("WSR: {0:.4f} MAR: {1:.4f}".format(word_strokes/n_words, mouse_actions/n_chars))
-		#print("Total Mouse Actions: {}".format(mouse_actions))
-		#print("Total Word Strokes: {}".format(word_strokes))
 
 		output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f} TIME: {3:4f}".format(i, total_ws/total_words, total_ma/total_chars, tiempo_total)
-		#output_txt = "Line {0} T_MAR: {2:.4f}".format(i, total_ma/total_chars)
 		if args.verbose:
 			print(output_txt)
 			print("\n")
-		file_out.write("{2} T_WSR: {0:.4f} T_MAR: {1:.4f} TIME: {3:.4f}\n".format(total_ws/total_words, total_ma/total_chars, i, tiempo_total))
-		#file_out.write("{2} T_MAR: {1:.4f}\n".format(total_ma/total_chars, i))
+		file_out.write(f'{word_strokes/n_words}\t{mouse_actions/n_chars}\n')
 		file_out.flush()
 	output_txt = f"TOTAL => WSR: {total_ws/total_words} - MAR: {total_ma/total_chars} - TIME: {tiempo_total/iteraciones}\n"
 	file_out.write(output_txt)
 	file_out.close()
 	print(output_txt)
-	#except:
-
-	#	file_out.write("T_WSR: {0:.4f} T_MAR: {1:.4f}\n".format(total_ws/total_words, total_ma/total_chars))
-	#	file_out.write("T_MAR: {1:.4f}\n".format(total_ma/total_chars))
-	#	file_out.close()
 
 def check_language_code(code):
 	if code=='ar':			# Arabic
@@ -609,7 +613,7 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-out", "--output", required=False, help="Output file")
-	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb'], help='Model name')
+	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb','bloom'], help='Model name')
 	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-fin","--final",required=False, default=-1,type=int,help="Final Line")
