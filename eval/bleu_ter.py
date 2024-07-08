@@ -104,7 +104,7 @@ def translate(args):
 	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
 	trg_lines = read_file(file_name)
 	if 't5' in args.model_name:
-		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
+		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
 		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
 		src_lines = [prompt + l for l in src_lines]
 	#|========================================================
