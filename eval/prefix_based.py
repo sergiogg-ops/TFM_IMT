@@ -27,16 +27,19 @@ class Restrictor():
 		self.start_char = '▁'
 		self.start_toks = [value for key,value in tokenizer.get_vocab().items() if key[0] == self.start_char]
 		self.tokenizer = tokenizer
-		self.prefix = []
+		self.prefix = ''
+		self.tok_prefix = []
 
-	def check_segments(self, target, hyp):
+	def check_segments(self, target, hyp, verbose = False):
 		prefix = []
 		correction = 0
 
 		target = tokenize(target)
 		hyp = tokenize(hyp)
 
-		for i in range(len(target)):
+		i = 0
+		while i < len(target):
+		#for i in range(len(target)):
 			if len(hyp)<=i:
 				correction = 1
 				prefix.append(target[i])
@@ -50,18 +53,26 @@ class Restrictor():
 					correction = 2
 					prefix.append(target[i+1])
 				break
+			i+=1
 		prefix = ' '.join(prefix)
 		prefix += ' '
-		self.prefix = self.tokenizer.encode(prefix)[:-1]
-		return correction, prefix
+		self.prefix = prefix
+		self.tok_prefix = self.tokenizer.encode(prefix)[:-1]
+		if verbose:
+			print('Prefix:', prefix)
+			print('Correction:', correction)
+		return correction, prefix, i >= len(target)
 	
 	def restrict(self,batch_idx, prefix_beam):
 		pos = len(prefix_beam)
-		if pos<len(self.prefix):
-			return [self.prefix[pos]]
-		elif pos==len(self.prefix):
+		if pos<len(self.tok_prefix):
+			return [self.tok_prefix[pos-1]]
+		elif pos==len(self.tok_prefix):
 			return self.start_toks
 		return self.vocab
+	
+	def decode(self,input_ids):
+		return self.prefix + self.tokenizer.decode(input_ids[len(self.tok_prefix):], skip_special_tokens=True)
 
 def read_file(name):
 	file_r = open(name, 'r')
@@ -132,7 +143,7 @@ def translate(args):
 		trg_lines = read_file(file_name)
 
 	if 't5' in args.model_name or args.model_name == 'bloom':
-		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
+		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
 		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
 		src_lines = [prompt + l for l in src_lines]
 
@@ -190,7 +201,8 @@ def translate(args):
 		restrictor = Restrictor(VOCAB, tokenizer)
 		prefix = []
 		len_old_prefix = 0
-		while prefix[:len(encoded_trg)] != encoded_trg:
+		ended = False
+		while not ended:
 			# Generate the translation
 			ite += 1
 
@@ -200,7 +212,7 @@ def translate(args):
 							max_new_tokens=MAX_TOKENS,
 							prefix_allowed_tokens_fn=restrictor.restrict)
 			generated_tokens = raw_output.tolist()[0]
-			output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+			output = restrictor.decode(generated_tokens)
 			tiempo_total += time() - ini
 			iteraciones += 1
 			if len(generated_tokens) >= MAX_TOKENS:
@@ -212,7 +224,7 @@ def translate(args):
 				#print('ITE TOK:', generated_tokens)
 				print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
 
-			correction, prefix = restrictor.check_segments(c_trg, output)
+			correction, prefix, ended = restrictor.check_segments(c_trg, output, args.verbose)
 			prefix = [2] + tokenizer(text_target=prefix).input_ids[:-1]
 			if correction == 0:
 				if len(prefix) != len_old_prefix +1:

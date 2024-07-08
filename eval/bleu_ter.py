@@ -72,8 +72,7 @@ def check_prefix(target, hyp):
 
 def load_model(model_path, args, _dev=None):
 	if args.model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained(model_path,
-											attn_implementation="flash_attention_2")
+		_mdl = MBartForConditionalGeneration.from_pretrained(model_path)
 		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", 
 											src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'm2m':
@@ -123,12 +122,16 @@ def translate(args):
 	hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
 	#hypothesis = [t['translation_text'] for t in translation]
 	print('Evaluando metricas...')
-	bleu = bleu_metric.compute(predictions=hypothesis,references=trg_lines)
-	ter = ter_metric.compute(predictions=hypothesis,references=trg_lines)
+	
+	bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines)]
+	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines)]
 	print('BLEU:')
-	print(f'\t{bleu}')
+	print(f'\t{sum(bleu)/len(bleu)}')
 	print('TER:')
-	print(f'\t{ter}')
+	print(f'\t{sum(ter)/len(ter)}')
+	with open(f'{args.folder}/{args.model_name}.{args.target}', 'w') as file:
+		for b, t in zip(bleu,ter):
+			file.write(f'{b}\t{t}\n')
 		
 	
 

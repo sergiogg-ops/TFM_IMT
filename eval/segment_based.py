@@ -279,6 +279,9 @@ class Restrictor():
 			texto = ''
 			begin = 0
 			tok = 0
+			#print('input_ids:',self.tokenizer.convert_ids_to_tokens(input_ids))
+			#print('tok_segments:',[self.tokenizer.convert_ids_to_tokens(seg) for seg in self.tok_segments])
+			#print('segments:',self.segments)
 			lengths = [len(seg) for seg in self.tok_segments]
 			for tok in range(len(input_ids)):
 				if idx_seg < len(self.tok_segments) and input_ids[(tok-lengths[idx_seg]):tok] == self.tok_segments[idx_seg]:
@@ -367,7 +370,7 @@ def translate(args):
 		trg_lines = read_file(file_name)
 
 	if 't5' in args.model_name or args.model_name == 'bloom':
-		extend = {'en':'English','fr':'French','de':'German','es':'Spanish'}
+		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
 		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
 		src_lines = [prompt + l for l in src_lines]
 
@@ -421,7 +424,7 @@ def translate(args):
 			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
 
 		ite = 0
-		MAX_TOKENS = 256
+		MAX_TOKENS = 400
 		restrictor = Restrictor(VOCAB,tokenizer,len(tokenize(c_trg)))
 		ended = False
 		ini = time()
@@ -473,6 +476,7 @@ def translate(args):
 		total_ws += word_strokes
 		total_ma += mouse_actions
 
+		#output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f} TIME: {3:4f}".format(i, total_ws/total_words, total_ma/total_chars, tiempo_total)
 		output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f} TIME: {3:4f}".format(i, total_ws/total_words, total_ma/total_chars, tiempo_total)
 		if args.verbose:
 			print(output_txt)

@@ -1,27 +1,54 @@
 \begin{tabular}{lllrr}
-modelo & src & trg & bleu & ter \\
-MBart & en & gl &  &  \\
-MBart & gl & en &  &  \\
-MBart & sw & en &  &  \\
-MBart & sw & en &  &  \\
-MBart & en & ne &  &  \\
-MBart & ne & en &  &  \\
-M2M & en & gl &  &  \\
-M2M & gl & en &  &  \\
-M2M & en & sw &  &  \\
-M2M & sw & en &  &  \\
-M2M & en & ne &  &  \\
-M2M & ne & en &  &  \\
-FlanT5 & en & gl &  &  \\
-FlanT5 & gl & en &  &  \\
-FlanT5 & en & sw &  &  \\
-FlanT5 & sw & en &  &  \\
-FlanT5 & en & ne &  &  \\
-FlanT5 & ne & en &  &  \\
-NLLB & en & gl &  &  \\
-NLLB & gl & en &  &  \\
-NLLB & en & sw &  &  \\
-NLLB & sw & en &  &  \\
-NLLB & en & ne &  &  \\
-NLLB & ne & en &  &  \\
+\hline
+ modelo   & src   & trg   &    wsr &    mar \\
+\hline
+ mBART    & fr    & en    &  25.18 &  32.37 \\
+ mBART    & en    & fr    &  25.61 &  30.12 \\
+ mBART    & en    & de    &  31.61 &  28.13 \\
+ mBART    & de    & en    &  30.27 &  34.64 \\
+ mBART    & es    & en    &  29.02 &  32.96 \\
+ mBART    & en    & es    &  30.52 &  35.34 \\
+ mBART    & en    & gl    &  34.56 &  41.7  \\
+ mBART    & gl    & en    &  28.74 &  35.81 \\
+ mBART    & en    & sw    &  35.94 &  37.61 \\
+ mBART    & sw    & en    &  25.55 &  30.73 \\
+ mBART    & en    & ne    & nan    & nan    \\
+ mBART    & ne    & en    & nan    & nan    \\
+ M2M      & en    & fr    &  26.63 &  31.3  \\
+ M2M      & fr    & en    &  30.52 &  34.29 \\
+ M2M      & de    & en    &  32.96 &  38.79 \\
+ M2M      & en    & de    &  33.33 &  29.93 \\
+ M2M      & en    & es    &  31.17 &  32.38 \\
+ M2M      & es    & en    &  30.72 &  35.75 \\
+ M2M      & en    & gl    &  32.8  &  38.44 \\
+ M2M      & gl    & en    & nan    & nan    \\
+ M2M      & en    & sw    &  24.96 &  26.42 \\
+ M2M      & sw    & en    &  23.47 &  27.65 \\
+ M2M      & en    & ne    & nan    & nan    \\
+ M2M      & ne    & en    & nan    & nan    \\
+ FlanT5   & en    & fr    &  36.84 &  44.33 \\
+ FlanT5   & fr    & en    &  41.72 &  48.6  \\
+ FlanT5   & de    & en    &  43.3  &  50.63 \\
+ FlanT5   & en    & de    &  49.24 &  48.75 \\
+ FlanT5   & en    & es    &  49.1  &  51.47 \\
+ FlanT5   & es    & en    &  41.72 &  68.52 \\
+ FlanT5   & en    & gl    & nan    & nan    \\
+ FlanT5   & gl    & en    & nan    & nan    \\
+ FlanT5   & en    & sw    & nan    & nan    \\
+ FlanT5   & sw    & en    & nan    & nan    \\
+ FlanT5   & en    & ne    & nan    & nan    \\
+ FlanT5   & ne    & en    & nan    & nan    \\
+ NLLB     & en    & fr    &  31.65 &  50.11 \\
+ NLLB     & fr    & en    &  33.63 &  50.97 \\
+ NLLB     & de    & en    &  35.36 &  53.97 \\
+ NLLB     & en    & de    &  36.53 &  44.59 \\
+ NLLB     & en    & es    &  34.37 &  48.27 \\
+ NLLB     & es    & en    &  33.01 &  50.75 \\
+ NLLB     & en    & gl    &  37.95 &  45.65 \\
+ NLLB     & gl    & en    & nan    & nan    \\
+ NLLB     & en    & sw    &  28.49 &  29.14 \\
+ NLLB     & sw    & en    &  24.95 &  30.84 \\
+ NLLB     & en    & ne    & nan    & nan    \\
+ NLLB     & ne    & en    & nan    & nan    \\
+\hline
 \end{tabular}
