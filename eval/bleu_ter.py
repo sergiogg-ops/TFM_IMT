@@ -115,16 +115,17 @@ def translate(args):
 	MAX_TOKENS = 400
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
-	translator = TranslationPipelineWithProgress(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
+	#translator = TranslationPipelineWithProgress(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
+	translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
 	#|========================================================
 	#| TRANSLATE
 	print('Traduciendo...')
 	hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
-	#hypothesis = [t['translation_text'] for t in translation]
+	hypothesis = [t['translation_text'] for t in hypothesis]
+
 	print('Evaluando metricas...')
-	
-	bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines)]
-	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines)]
+	bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]
+	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]
 	print('BLEU:')
 	print(f'\t{sum(bleu)/len(bleu)}')
 	print('TER:')
