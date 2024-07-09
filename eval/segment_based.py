@@ -417,7 +417,9 @@ def translate(args):
 
 		# Convert them to ids
 		encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
-		#encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
+		encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
+		if len(encoded_trg) > 512:
+			continue
 
 		# Prints
 		if args.verbose:
