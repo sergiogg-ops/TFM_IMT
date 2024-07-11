@@ -17,3 +17,11 @@ en,es,mbart,nllb,True,False
 en,es,m2m,flant5,True,True
 en,es,m2m,nllb,True,False
 en,es,flant5,nllb,True,True
+gl,en,flant5,nllb,False,True
+en,gl,m2m,flant5,True,True
+en,gl,m2m,nllb,True,True
+en,gl,flant5,nllb,True,True
+sw,en,m2m,flant5,True,True
+en,sw,m2m,flant5,True,True
+en,sw,m2m,nllb,True,True
+en,sw,flant5,nllb,True,True

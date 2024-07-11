@@ -30,8 +30,7 @@ def plot_chart(data,filename, langs):
     MODELS = data['modelo'].unique()
     x = np.arange(len(MODELS))
     pairs = [(src,'en') for src in langs] + [('en',trg) for trg in langs]
-    
-    print(data[(data['modelo'] == 'NLLB') & (data['src'] == 'en') & (data['trg'] == 'es')])
+
     plt.figure(figsize=(17,10))
     for pair, i in zip(pairs, np.arange(1,7)):
         src, trg = pair
