@@ -1,4 +1,4 @@
-**Interactive machine translation**
+# Interactive machine translation
 
 This git contains code to train several LLMs and perform simulated sesions of interactiva machine translation based in prefixes and segments. This is:
 
@@ -9,7 +9,7 @@ This git contains code to train several LLMs and perform simulated sesions of in
 5. The human can type some corrections by keyboard.
 6. The system will try another hypothesis minding the restrictions that the human has introduced.
 
-To train a model in a specific translation direction one can use the train.py script. One can also evaluate the trained model for interactive machine translation with the scripts in the eval folder.
+To train a model in a specific translation direction one can use the 'train.py' script. One can also evaluate the trained model for interactive machine translation with the scripts in the eval folder.
 
 The results of our experimentations are contained in the resultados folder.
 
