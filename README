@@ -1,53 +1,16 @@
-MBart, many-to-many (610.879.488 parametros) -> https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt
+**Interactive machine translation**
 
-flan-t5, small (60M parametros) -> https://huggingface.co/google/flan-t5-small
+This git contains code to train several LLMs and perform simulated sesions of interactiva machine translation based in prefixes and segments. This is:
 
-flan-t5, base (220M parametros) -> https://huggingface.co/google/flan-t5-base
+1. The system translates the sentence to the target language, offering an initial hypothesis
+2. If the translation is good enough the "human" can stop the proccess. Also, one can say that the best solution is the result of concatenate all the validated segments.
+3. The human can mark as many segments as needed. In the prefix based approach the only segment that one can mark is the one between the begining of the translation and the first incorrect word.
+4. In the segment based approach the human can mark pairs of segments that should be one right after the other in the ideal translation.
+5. The human can type some corrections by keyboard.
+6. The system will try another hypothesis minding the restrictions that the human has introduced.
 
-M2M, many-to-many (483.905.536 parametros) -> https://huggingface.co/docs/transformers/model_doc/m2m_100
+To train a model in a specific translation direction one can use the train.py script. One can also evaluate the trained model for interactive machine translation with the scripts in the eval folder.
 
-NLLB, many-to-many -> https://huggingface.co/docs/transformers/model_doc/nllb
+The results of our experimentations are contained in the resultados folder.
 
-bloom, 560M parametros, PROMT -> https://huggingface.co/bigscience/bloom-560m
-
-Seamless -> https://huggingface.co/facebook/seamless-m4t-v2-large
-
-tower, sobre Llama, PROMT (6.738.472.960 parametros) → https://huggingface.co/Unbabel/TowerInstruct-7B-v0.2
-
-MT5 , ¿PROMT? (582.401.280 parametros) -> https://huggingface.co/google/mt5-base
-
-llama, small, PROMT (101M parametros) -> https://huggingface.co/BEE-spoke-data/smol_llama-101M-GQA
-
-Mamba, no multilingüe (130M parametros) -> https://huggingface.co/Q-bert/Mamba-370M
-
-
-DATASETS
-
-WMT2016, (inglés, francés, alemán, ruso, checo, finés, rumano) -> https://paperswithcode.com/dataset/wmt-2016
-
-Europarl (21 lenguas europeas) -> https://paperswithcode.com/dataset/europarl
-
-FLORES-101, (101 idiomas) -> https://paperswithcode.com/dataset/flores-101
-
-OPUS-100, (100 idiomas) -> https://paperswithcode.com/dataset/opus-100
-
-MTNT, (frances <-> japones) -> https://paperswithcode.com/dataset/mtnt
-
-
-INTERACTIVE MACHINE TRANSLATION
-
-Synslator, 8/9/2023 -> https://arxiv.org/abs/2310.05025
-
-IMTLab, 2023 -> https://aclanthology.org/2023.emnlp-main.922/
-
-TranSmart, 27/5/2021 -> https://arxiv.org/abs/2105.13072
-
-Microsoft, 11/2019 -> https://www.microsoft.com/en-us/research/publication/inmt-interactive-neural-machine-translation-prediction/
-
-CASMACAT, 2014 -> https://aclanthology.org/2014.eamt-1.12/
-
-TransType, 2000 -> https://aclanthology.org/W00-0507/
-
-
-
-https://huggingface.co/learn/nlp-course/chapter7/4
+There are some analysis and visualization utilities in the utils folder.
