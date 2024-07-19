@@ -12,10 +12,10 @@ import numpy as np
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
-                          M2M100ForConditionalGeneration, M2M100Tokenizer,
-                          MBart50TokenizerFast, MBartForConditionalGeneration,
-						  MT5ForConditionalGeneration,
-						  BitsAndBytesConfig)
+                          BitsAndBytesConfig, M2M100ForConditionalGeneration,
+                          M2M100Tokenizer, MBart50TokenizerFast,
+                          MBartForConditionalGeneration,
+                          MT5ForConditionalGeneration)
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
@@ -285,7 +285,7 @@ class Restrictor():
 			lengths = [len(seg) for seg in self.tok_segments]
 			for tok in range(len(input_ids)):
 				if idx_seg < len(self.tok_segments) and input_ids[(tok-lengths[idx_seg]):tok] == self.tok_segments[idx_seg]:
-					texto += self.tokenizer.decode(input_ids[begin:tok-lengths[idx_seg]]) + ' '
+					texto += self.tokenizer.decode(input_ids[begin:tok-lengths[idx_seg]],skip_special_tokens=True) + ' '
 					texto += self.segments[idx_seg] + ' '
 					begin = tok + 1
 					idx_seg += 1

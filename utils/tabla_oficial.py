@@ -1,9 +1,9 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-from argparse import ArgumentParser
-import numpy as np
-from iso639 import Lang
 import os
+from argparse import ArgumentParser
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 BAR_WIDTH = 0.2
 iso639 = {'en':'Inglés','fr':'Francés','de':'Alemán','es':'Español','gl':'Gallego','sw':'Suajili','ne':'Nepalí'}

@@ -1,7 +1,0 @@
-Host optimus.prhlt.upv.es
-  HostName optimus.prhlt.upv.es
-  User sgomgon
-
-Host mtgpu2.prhlt.upv.es
-  HostName mtgpu2.prhlt.upv.es
-  User sgomgon
