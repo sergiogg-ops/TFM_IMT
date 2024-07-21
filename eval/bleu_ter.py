@@ -86,7 +86,7 @@ def load_model(model_path, args, _dev=None):
 		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path)
 		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
 	elif args.model_name == 'nllb':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path)
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
 											src_lang=args.source_code, tgt_lang=args.target_code)
 	else:
