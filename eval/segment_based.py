@@ -49,7 +49,6 @@ class Restrictor():
 
 		lent, lenh = len(tgt), len(hyp)
 		dp = self.cruce(tgt,hyp,lent,lenh)
-		#print(dp)
 		t_seg = self.get_segments(dp)
 		ini_seg = np.zeros(t_seg.shape[0],dtype=int)
 		if verbose: 
@@ -181,16 +180,10 @@ class Restrictor():
 			self.tok_segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
 	
 	def restrict(self,batch_id, input_ids):
-		#if self.mierdaenbote % 10 == 0:
-		#	print(self.tok_segments)
-		self.mierdaenbote += 1
 		idx_seg, idx_tok,last_match = self.get_state(input_ids)
-		#print(idx_seg, idx_tok,last_match,len(input_ids))
-		#print(input_ids.tolist())
 		waiting = len(input_ids) - last_match
 		# ¿Se ha terminado de añadir segmentos?
 		if idx_seg >= len(self.tok_segments):
-			#print('con eos###################################################################')
 			return self.vocab	
 		
 		# ¿hemos terminado de añadir el segmento actual?
@@ -198,9 +191,7 @@ class Restrictor():
 		if idx_tok >= len(self.tok_segments[idx_seg]):
 			if idx_seg >= len(self.tok_segments)-1:
 				# ultimo token añadido
-				#print('con eos###################################################################')
 				return self.start_toks + [self.eos]
-			#print('start tokens')
 			return self.start_toks
 		
 		token = None
@@ -237,7 +228,6 @@ class Restrictor():
 		if cur_seg > 0 and last_pos == len(input_ids):
 			return cur_seg-1, len(self.tok_segments[cur_seg-1]), last_pos
 		if cur_seg < len(self.tok_segments):
-			#if cur_seg > 0 and input_ids[last_pos:].tolist() == self.tok_segments[cur_seg-1]:
 			cur_tok = min(len(input_ids),len(self.tok_segments[cur_seg]))
 			while cur_tok > 0 and input_ids[-cur_tok:].tolist() != self.tok_segments[cur_seg][:cur_tok]:
 				cur_tok -= 1
@@ -247,41 +237,11 @@ class Restrictor():
 		else:
 			return cur_seg, -1, last_pos
 
-	def decode0(self,input_ids):
-			idx_seg = 0 # indice de segmentos
-			idx_tok = 0 # indice de token en segmentos
-			texto = ''
-			begin = 0
-			tok = 0
-			for tok in range(len(input_ids)):
-				if idx_seg < len(self.tok_segments) and input_ids[tok] == self.tok_segments[idx_seg][idx_tok]:
-					if input_ids[tok] == self.tokenizer.unk_token_id:
-						# parte de antes de <unk>
-						texto += self.tokenizer.decode(input_ids[begin:tok], skip_special_tokens=True)
-						# correspondencia de <unk> con la parte de la palabra que le toca
-						mapping = self.tokenizer(self.segments[idx_seg], return_offsets_mapping=True, return_special_tokens_mask=True)
-						metaoffset = sum(mapping['special_tokens_mask'][:idx_tok])
-						start_unk, end_unk = mapping['offset_mapping'][idx_tok+metaoffset]	
-						texto += ' ' if start_unk > 0 and self.segments[idx_seg][start_unk-1] == ' ' else ''
-						texto += self.segments[idx_seg][start_unk:end_unk]
-						texto += ' ' if end_unk < len(self.segments[idx_seg]) and self.segments[idx_seg][end_unk] == ' ' else ''
-						begin = tok + 1
-					idx_tok += 1
-					if idx_tok == len(self.tok_segments[idx_seg]):
-						idx_seg += 1
-						idx_tok = 0
-			if begin < len(input_ids):
-				texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
-			return texto
-
 	def decode(self,input_ids):
 			idx_seg = 0 # indice de segmentos
 			texto = ''
 			begin = 0
 			tok = 0
-			#print('input_ids:',self.tokenizer.convert_ids_to_tokens(input_ids))
-			#print('tok_segments:',[self.tokenizer.convert_ids_to_tokens(seg) for seg in self.tok_segments])
-			#print('segments:',self.segments)
 			lengths = [len(seg) for seg in self.tok_segments]
 			for tok in range(len(input_ids)):
 				if idx_seg < len(self.tok_segments) and input_ids[(tok-lengths[idx_seg]):tok] == self.tok_segments[idx_seg]:
