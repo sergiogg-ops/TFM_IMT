@@ -132,6 +132,4 @@ cython_debug/
 # Ignore VSCode settings
 .vscode/
 
-art/
-figuras/
-metrics/
+*.pdf
