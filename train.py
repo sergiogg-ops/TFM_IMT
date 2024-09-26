@@ -1,20 +1,9 @@
-"""
-Fine Tune Mbart Model
-
-Example of use:
-	> python3 imt_bart.py -src es -trg en -dir es-en
-"""
 from transformers import (MBartForConditionalGeneration, MBart50TokenizerFast,
 						M2M100ForConditionalGeneration, M2M100Tokenizer,
-						AutoTokenizer, AutoModelForSeq2SeqLM,
-						AutoModelForCausalLM, MT5ForConditionalGeneration,
-						Seq2SeqTrainingArguments, DataCollatorForSeq2Seq, Seq2SeqTrainer)
+						AutoTokenizer, AutoModelForSeq2SeqLM)
 from peft import LoraConfig, get_peft_model
 import lightning as L
-from datasets import DatasetDict
 from evaluate import load
-import bitsandbytes as bnb
-import numpy as np
 import evaluate
 import argparse
 import torch
@@ -27,7 +16,17 @@ TOKENIZER = None
 os.environ['TOKENIZERS_PARALLELISM']='true'
 
 class MosesCorpus(torch.utils.data.Dataset):
+	'''
+	Pytorch dataset from a moses format corpus
+	'''
 	def __init__(self,source,target,tok,prefix=''):
+		'''
+		Parameters:
+			source (str): Path to the source file
+			target (str): Path to the target file
+			tok (Tokenizer): Tokenizer to use
+			prefix (str): Prefix to add to the source text
+		'''
 		self.src = []
 		with open(source,'r') as file:
 			self.src = [l for l in file]
@@ -47,7 +46,16 @@ class MosesCorpus(torch.utils.data.Dataset):
 		  'labels': self.inputs['labels'][idx]}
 
 class TranslationModel(L.LightningModule):
+	'''
+	Pytorch Lightning wrapper module for the training
+	'''
 	def __init__(self, model, tokenizer,lr=1e-5):
+		'''
+		Paremeters:
+			model (torch.nn.Module): Model to train
+			tokenizer (Tokenizer): Tokenizer to use
+			lr (float): Learning rate of the optimizer
+		'''
 		super().__init__()
 		self.model = model
 		self.tokenizer = tokenizer
@@ -79,21 +87,24 @@ class TranslationModel(L.LightningModule):
                 'lr_scheduler': torch.optim.lr_scheduler.LinearLR(opt,start_factor=1, end_factor=1/3, total_iters=10000)}
 
 
-def load_model(model_name, _dev=None):
+def load_model(model_name):
+	'''
+	Downloads the model from the huggingface repository
+
+	Parameters:
+		model_name (str): Name of the model to download
+	
+	Returns:
+		torch.nn.Module: Model to train
+	'''
 	if model_name == 'mbart':
 		_mdl = 	MBartForConditionalGeneration.from_pretrained('facebook/mbart-large-50-many-to-many-mmt')
 	elif model_name == 'm2m':
 		_mdl = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M")
 	elif model_name == 'flant5':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
-	elif model_name == 'mt5':
-		_mdl = MT5ForConditionalGeneration.from_pretrained("google/mt5-small")
-	elif model_name == 'llama3':
-		_mdl = AutoModelForCausalLM.from_pretrained("meta-llama/Meta-Llama-3-8B")
 	elif model_name == 'nllb':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
-	elif model_name == 'bloom':
-		_mdl = AutoModelForCausalLM.from_pretrained('bigscience/bloom-560m')
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
@@ -101,20 +112,23 @@ def load_model(model_name, _dev=None):
 
 
 def load_tokenizer(args):
+	'''
+	Dowloads the tokenizer from the huggingface repository
+
+	Parameters:
+		args (Namespace): Parameters of the execution
+
+	Returns:
+		Tokenizer: Tokenizer to use
+	'''
 	if args.model_name == 'mbart':
 		_tok = MBart50TokenizerFast.from_pretrained('facebook/mbart-large-50-many-to-many-mmt')
 	elif args.model_name == 'm2m':
 		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
 	elif args.model_name == 'flant5':
 		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base")
-	elif args.model_name == 'mt5':
-		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
-	elif args.model_name == 'llama3':
-		_tok = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B")
 	elif args.model_name == 'nllb':
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
-	elif args.model_name == 'bloom':
-		_tok = AutoTokenizer.from_pretrained('bigscience/bloom-560m')
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -122,14 +136,10 @@ def load_tokenizer(args):
 	_tok.tgt_lang = args.target_code
 	return _tok
 
-
-def load_text(file_path):
-	with open(file_path) as file:
-		data = file.read().splitlines()
-	return data
-
-
 def load_datasets(args):
+	'''
+	Loads the training and development datasets
+	'''
 	if 't5' in args.model_name:
 		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'swahili'}
 		prefix = f'translate from {extend[args.source]} to {extend[args.target]}: '
@@ -147,6 +157,15 @@ def load_datasets(args):
 	return training, development
 
 def check_language_code(code):
+	'''
+	Transforms the language code to the format used by the mBART model
+
+	Parameters:
+		code (str): Language code to transform
+
+	Returns:
+		str: Language code in the format used by the mBART model
+	'''
 	if code=='ar':			# Arabic
 		return 'ar_AR'
 	elif code == 'cs':		# Czech
@@ -261,13 +280,12 @@ def check_parameters(args):
 	return args
 
 def read_parameters():
-	parser = argparse.ArgumentParser()
+	parser = argparse.ArgumentParser(description='Train a model for translation.')
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','mt5','llama3','nllb','bloom'],help='Model to train')
-	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use LowRank or not')
-	parser.add_argument('-quant','--quantize',action='store_true',help='Whether to quantize the model before training or not')
+	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','nllb'],help='Model to train')
+	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use Low-Rank Adaptation or not')
 	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
 	parser.add_argument('-bs','--batch_size',type=int,default=32,help='Batch size')
 	parser.add_argument('-lr','--learning_rate',type=float,default=2e-5,help='Learning rate of the optimizer')
