@@ -13,4 +13,4 @@ To train a model in a specific translation direction one can use the `train.py` 
 
 The results of our experimentations are contained in the resultados folder.
 
-There are some analysis and visualization utilities in the utils folder.
+There are some analysis and visualization utilities in the utils folder. 
