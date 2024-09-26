@@ -14,12 +14,24 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
 
 def read_file(name):
+	'''
+	Opens a file and split the lines into a list
+
+	Parameters:
+		name (str): Name of the file to open
+	
+	Returns:
+		list: List with the lines of the file
+	'''
 	file_r = open(name, 'r')
 	lines = file_r.read().splitlines()
 	file_r.close()
 	return lines
 	
 def translate(args):
+	'''
+	Performs the simulation of the interactive sesion and obtains the WSR and MAR metrics.
+	'''
 	#try:
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
@@ -166,7 +178,7 @@ def check_parameters(args):
 	return args
 
 def read_parameters():
-	parser = argparse.ArgumentParser()
+	parser = argparse.ArgumentParser(description='Simulates a user in an IMT task and evaluate the WSR and MAR metrics')
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")

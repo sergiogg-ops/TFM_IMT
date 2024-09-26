@@ -1,101 +1,31 @@
 import argparse
-import sys
 
 import torch
-from nltk.tokenize.treebank import TreebankWordTokenizer
 import evaluate
-import bitsandbytes as bnb
-from tqdm import tqdm
-from transformers import (MBart50TokenizerFast, MBartForConditionalGeneration,
-						  M2M100ForConditionalGeneration, M2M100Tokenizer,
-						  AutoModelForSeq2SeqLM, AutoTokenizer,
-                          TranslationPipeline, MT5ForConditionalGeneration)
+from restriction import load_model, check_language_code
+from transformers import TranslationPipeline
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
-wordTokenizer = TreebankWordTokenizer()
-
-class TranslationPipelineWithProgress:
-    def __init__(self, model,tokenizer, batch_size, device):
-        self.translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=batch_size, device=device)
-        self.batch_size = batch_size
-
-    def __call__(self, texts, **kwargs):
-        translations = []
-        # Process texts in batches
-        for i in tqdm(range(0, len(texts), self.batch_size), desc="Traduciendo", unit="batch"):
-            batch_texts = texts[i:i + self.batch_size]
-            batch_translations = self.translator(batch_texts, **kwargs)
-            translations.extend([t['translation_text'] for t in batch_translations])
-        return translations
 
 def read_file(name):
+	'''
+	Opens a file and split the lines into a list
+
+	Parameters:
+		name (str): Name of the file to open
+	
+	Returns:
+		list: List with the lines of the file
+	'''
 	file_r = open(name, 'r')
 	lines = file_r.read().splitlines()
 	file_r.close()
 	return lines
 
-def tokenize(sentence):
-	sentence = sentence.replace('…', '...')
-	sentence = sentence.replace('´', '\'')
-	sentence = sentence.replace('\'', ' \' ')
-	sentence = sentence.replace('.', ' . ')
-	tokens = wordTokenizer.tokenize(sentence)
-	for idx, t in enumerate(tokens):
-		t = t.replace('``', '"')
-		tokens[idx] = t
-	return tokens
-
-def check_prefix(target, hyp):
-	prefix = []
-	correction = 0
-
-	target = tokenize(target)
-	hyp = tokenize(hyp)
-
-	for i in range(len(target)):
-		if len(hyp)<=i:
-			correction = 1
-			prefix.append(target[i])
-			break
-		elif target[i] == hyp[i]:
-			prefix.append(target[i])
-		else:
-			correction = 1
-			prefix.append(target[i])
-			if target[i] == hyp[i][:len(target[i])] and len(target)>i+1:
-				correction = 2
-				prefix.append(target[i+1])
-			break
-	prefix = ' '.join(prefix)
-	prefix += ' '
-	return prefix, correction
-
-def load_model(model_path, args, _dev=None):
-	if args.model_name == 'mbart':
-		_mdl = MBartForConditionalGeneration.from_pretrained(model_path)
-		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", 
-											src_lang=args.source_code, tgt_lang=args.target_code)
-	elif args.model_name == 'm2m':
-		_mdl = M2M100ForConditionalGeneration.from_pretrained(model_path)
-		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M", 
-											src_lang=args.source_code, tgt_lang=args.target_code)
-	elif args.model_name == 'flant5':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path)
-		_tok = AutoTokenizer.from_pretrained("google/flan-t5-small")
-	elif args.model_name == 'mt5':
-		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path)
-		_tok = AutoTokenizer.from_pretrained("google/mt5-small")
-	elif args.model_name == 'nllb':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path)
-		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
-											src_lang=args.source_code, tgt_lang=args.target_code)
-	else:
-		print('Model not implemented: {0}'.format(args.model_name))
-		sys.exit(1)
-	_mdl.to(_dev)
-	return _mdl, _tok
-
 def translate(args):
+	'''
+	Translate the setences to the target language and evaluate the BLEU and TER metrics
+	'''
 	print('Cargando modelo...')
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
@@ -115,7 +45,6 @@ def translate(args):
 	MAX_TOKENS = 400
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
-	#translator = TranslationPipelineWithProgress(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
 	translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
 	#|========================================================
 	#| TRANSLATE
@@ -133,117 +62,6 @@ def translate(args):
 	with open(f'{args.folder}/{args.model_name}.{args.target}', 'w') as file:
 		for b, t in zip(bleu,ter):
 			file.write(f'{b}\t{t}\n')
-		
-	
-
-def check_language_code(code):
-	if code=='ar':			# Arabic
-		return 'ar_AR'
-	elif code == 'cs':		# Czech
-		return 'cs_CZ'
-	elif code == 'de':		# German
-		return 'de_DE'
-	elif code == 'en':		# English
-		return 'en_XX'
-	elif code == 'es':		# Spanish
-		return 'es_XX'
-	elif code == 'et':		# Estonian
-		return 'et_EE'
-	elif code == 'fi':		# Finnish
-		return 'fi_FI'
-	elif code == 'fr':		# French
-		return 'fr_XX'
-	elif code == 'gu':		# Gujarati
-		return 'gu_IN'
-	elif code == 'hi':		# Hindi
-		return 'hi_IN'
-	elif code == 'it':		# Italian
-		return 'it_IT'
-	elif code == 'ja':		# Japanese
-		return 'ja_XX'
-	elif code == 'kk':		# Kazakh
-		return 'kk_KZ'
-	elif code == 'ko':		# Korean
-		return 'ko_KR'
-	elif code == 'lt':		# Lithuanian
-		return 'lt_LT'
-	elif code == 'lv':		# Latvian
-		return 'lv_LV'
-	elif code == 'my':		# Burmese
-		return 'my_MM'
-	elif code == 'ne':		# Nepali
-		return 'ne_NP'
-	elif code == 'nl':		# Ducht
-		return 'nl_XX'
-	elif code == 'ro':		# Romanian
-		return 'ro_RO'
-	elif code == 'ru':		# Russian
-		return 'ru_RU'
-	elif code == 'si':		# Sinhala
-		return 'si_LK'
-	elif code == 'tr':		# Turkish
-		return 'tr_TR'
-	elif code == 'vi':		# Vietnamese
-		return 'vi_VN'
-	elif code == 'zh':		# Chinese
-		return 'zh_CN'
-	elif code == 'af':		# Afrikaans
-		return 'af_ZA'
-	elif code == 'az':		# Azerbaijani
-		return 'az_AZ'
-	elif code == 'bn':		# Bengali
-		return 'bn_IN'
-	elif code == 'fa':		# Persian
-		return 'fa_IR'
-	elif code == 'he':		# Hebrew
-		return 'he_IL'
-	elif code == 'hr':		# Croatian
-		return 'hr_HR'
-	elif code == 'id':		# Indonesian
-		return 'id_ID'
-	elif code == 'ka':		# Georgian
-		return 'ka_GE'
-	elif code == 'km':		# Khmer
-		return 'km_KH'
-	elif code == 'mk':		# Macedonian
-		return 'mk_MK'
-	elif code == 'ml':		# Malayalam
-		return 'ml_IN'
-	elif code == 'mn':		# Mongolian
-		return 'mn_MN'
-	elif code == 'mr':		# Marathi
-		return 'mr_IN'
-	elif code == 'pl':		# Polish
-		return 'pl_PL'
-	elif code == 'ps':		# Pashto
-		return 'ps_AF'
-	elif code == 'pt':		# Portuguese
-		return 'pt_XX'
-	elif code == 'sv':		# Swedish
-		return 'sv_SE'
-	elif code == 'sw':		# Swahili
-		return 'sw_KE'
-	elif code == 'ta':		# Tamil
-		return 'ta_IN'
-	elif code == 'te':		# Telegu
-		return 'te_IN'
-	elif code == 'th':		# Thai
-		return 'th_TH'
-	elif code == 'tl':		# Tagalog
-		return 'tl_XX'
-	elif code == 'uk':		# Ukrainian
-		return 'uk_UA'
-	elif code == 'ur':		# Urdu
-		return 'ur_PK'
-	elif code == 'xh':		# Xhosa
-		return 'xh_ZA'
-	elif code == 'gl':		# Galician
-		return 'gl_ES'
-	elif code == 'sl':		# Slovene
-		return 'sl_SI'
-	else:
-		print('Code not implemented')
-		sys.exit()
 
 def check_parameters(args):
 	# Check Source Language
@@ -259,13 +77,13 @@ def check_parameters(args):
 	return args
 
 def read_parameters():
-	parser = argparse.ArgumentParser()
+	parser = argparse.ArgumentParser(description='Translate and evaluate the BLEU and TER metrics')
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
-	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
+	parser.add_argument("-dir", "--folder", required=True, help="Folder where the dataset is")
 	parser.add_argument("-p","--partition", required=False, default="test", choices=["dev","test"], help="Partition to load")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
-	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','mt5','nllb'], help="Model to load")
+	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','nllb'], help="Model to load")
 	parser.add_argument('-b','--batch_size',required=False,default=64,type=int,help='Batch size for the inference')
 
 	args = parser.parse_args()
