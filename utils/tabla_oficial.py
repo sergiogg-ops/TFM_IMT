@@ -54,7 +54,7 @@ def plot_chart(data,filename, langs):
     plt.savefig(filename)
     plt.show()
 
-parser = ArgumentParser()
+parser = ArgumentParser(description='Genera tablas en latex a partir de un archivo csv')
 parser.add_argument('file', type=str, default='test.csv', help='Archivo que leer')
 parser.add_argument('-o','--output', type=str, default='figuras', help='Directorio donde guardar las tablas y figuras')
 parser.add_argument('-opt','--opcion', type=str, default='general', choices=['general','calidad','prefijos','segmentos','tiempos','prefseg'],help='Opción de tabla a mostrar')

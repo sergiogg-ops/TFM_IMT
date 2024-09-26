@@ -1,6 +1,6 @@
-import os
-from argparse import ArgumentParser
-
+'''
+Generates a chart showing either the BLEU and TER scores or the WSR and MAR scores for a given language pair in both directions.
+'''
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd

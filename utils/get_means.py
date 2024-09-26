@@ -1,3 +1,9 @@
+'''
+Obtains the mean of the first and second columns of a file.
+
+Usage:
+    python utils/get_means.py <file>
+'''
 from sys import argv
 
 m1, m2 = [], []

@@ -9,8 +9,6 @@ This git contains code to train several LLMs and perform simulated sesions of in
 5. The human can type some corrections by keyboard.
 6. The system will try another hypothesis minding the restrictions that the human has introduced.
 
-To train a model in a specific translation direction one can use the `train.py` script. One can also evaluate the trained model for interactive machine translation with the scripts in the eval folder.
-
-The results of our experimentations are contained in the resultados folder.
+To train a model in a specific translation direction one can use the `train.py` script. That model can be evaluated with the scripts in the `eval` folder after being extracted with the `utils/unwrapp.py` script. The `eval/bleu_ter.py` script evaluates the model over a classical translation task. The `eval/imt.py` permits evaluating the models over an interactive machine translation task with a simulated user.
 
 There are some analysis and visualization utilities in the utils folder. 
