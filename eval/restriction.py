@@ -9,17 +9,20 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
 						  BitsAndBytesConfig)
 
 class Restrictor(ABC):
-    def __init__(self, vocab, tokenizer):
-        self.vocab = vocab
-        self.start_char = '▁'
-        self.start_toks = [value for key,value in tokenizer.get_vocab().items() if key[0] == self.start_char]
-        self.tokenizer = tokenizer
-        self.eos = self.tokenizer.get_vocab()[tokenizer.eos_token]
+	'''
+	Parent class for the implementation of the constrained search of the response
+	'''
+	def __init__(self, vocab, tokenizer):
+		self.vocab = vocab
+		self.start_char = '▁'
+		self.start_toks = [value for key,value in tokenizer.get_vocab().items() if key[0] == self.start_char]
+		self.tokenizer = tokenizer
+		self.eos = self.tokenizer.get_vocab()[tokenizer.eos_token]
 
-    @abstractmethod
-    def check_segments(self,tgt,hyp,verbose=False):
-        '''
-            Comprueba los segmentos coincidentes entre la hipotesis y la referencia.
+	@abstractmethod
+	def check_segments(self,tgt,hyp,verbose=False):
+		'''
+			Comprueba los segmentos coincidentes entre la hipotesis y la referencia.
 		
 		Parameters:
             tgt (str): Referencia.
@@ -32,32 +35,32 @@ class Restrictor(ABC):
             bool: ¿Se ha terminado de añadir la referencia
 
 		'''
-        pass
+		pass
 	
-    @abstractmethod
-    def prepare(self, model_name):
-        '''
+	@abstractmethod
+	def prepare(self, model_name):
+		'''
 		    Prepara el modulo para restringir la generacion de la respuesta.
 			
         Parameters:
             model_name (str): Nombre del modelo.
 		'''
-        pass
+		pass
 
-    @abstractmethod
-    def restrict(self,batch_id, input_ids):
-        '''
+	@abstractmethod
+	def restrict(self,batch_id, input_ids):
+		'''
             Restring un paso de la generacion de la respuesta.
 			
         Parameters:
             batch_id (int): Identificador de la muestra.
             input_ids (list): Tokens generados hasta el momento.
 		'''
-        pass
+		pass
 
-    @abstractmethod
-    def decode(self,input_ids):
-        '''
+	@abstractmethod
+	def decode(self,input_ids):
+		'''
             Convierte los tokens generados a texto
 			
         Parameters:
@@ -66,74 +69,80 @@ class Restrictor(ABC):
         Returns:
             str: Texto generado.
 		'''
-        pass
+		pass
 
 class PrefixRestrictor(Restrictor):
-    def __init__(self, vocab, tokenizer, **kwargs):
-        super().__init__(vocab,tokenizer)
-        self.prefix = ''
-        self.tok_prefix = []
+	'''
+	Class used for the constrained generation when using a prefix based IMT approach.
+	'''
+	def __init__(self, vocab, tokenizer, **kwargs):
+		super().__init__(vocab,tokenizer)
+		self.prefix = ''
+		self.tok_prefix = []
 
-    def check_segments(self, target, hyp, verbose = False):
-        prefix = []
-        correction = 0
-        mouse_actions = 0
-        word_strokes = 0
+	def check_segments(self, target, hyp, verbose = False):
+		prefix = []
+		correction = 0
+		mouse_actions = 0
+		word_strokes = 0
 
-        target = tokenize(target)
-        hyp = tokenize(hyp)
+		target = tokenize(target)
+		hyp = tokenize(hyp)
 
-        i = 0
-        while i < len(target):
+		i = 0
+		while i < len(target):
 		#for i in range(len(target)):
-            if len(hyp)<=i:
-                correction = 1
-                prefix.append(target[i])
-                break
-            elif target[i] == hyp[i]:
-                prefix.append(target[i])
-            else:
-                correction = 1
-                prefix.append(target[i])
-                if target[i] == hyp[i][:len(target[i])] and len(target)>i+1:
-                    correction = 2
-                    prefix.append(target[i+1])
-                break
-            i+=1
-        prefix = ' '.join(prefix)
-        prefix += ' '
-        if correction == 0:
-            if len(prefix) != len(self.prefix)+1:
-                mouse_actions = 1
-        elif correction == 1:
-            if len(prefix) != len(self.prefix) +1:
-                mouse_actions = 1
-            word_strokes = 1
-        elif correction == 2:
-            if len(prefix) != len(self.prefix) +1:
-                mouse_actions = 2
-            word_strokes = 2
-        self.prefix = prefix
-        if verbose:
-            print('Prefix:', prefix)
-            print('Correction:', correction)
-        return mouse_actions, word_strokes, i >= len(target)
+			if len(hyp)<=i:
+				correction = 1
+				prefix.append(target[i])
+				break
+			elif target[i] == hyp[i]:
+				prefix.append(target[i])
+			else:
+				correction = 1
+				prefix.append(target[i])
+				if target[i] == hyp[i][:len(target[i])] and len(target)>i+1:
+					correction = 2
+					prefix.append(target[i+1])
+					break
+			i+=1
+		prefix = ' '.join(prefix)
+		prefix += ' '
+		if correction == 0:
+			if len(prefix) != len(self.prefix)+1:
+				mouse_actions = 1
+		elif correction == 1:
+			if len(prefix) != len(self.prefix) +1:
+				mouse_actions = 1
+			word_strokes = 1
+		elif correction == 2:
+			if len(prefix) != len(self.prefix) +1:
+				mouse_actions = 2
+			word_strokes = 2
+		self.prefix = prefix
+		if verbose:
+			print('Prefix:', prefix)
+			print('Correction:', correction)
+		return mouse_actions, word_strokes, i >= len(target)
 	
-    def prepare(self, model_name):
-        self.tok_prefix = self.tokenizer.encode(self.prefix)[:-1]
+	def prepare(self, model_name):
+		self.tok_prefix = self.tokenizer.encode(self.prefix)[:-1]
 	
-    def restrict(self,batch_idx, prefix_beam):
-        pos = len(prefix_beam)
-        if pos<len(self.tok_prefix):
-            return [self.tok_prefix[pos-1]]
-        elif pos==len(self.tok_prefix):
-            return self.start_toks
-        return self.vocab
+	def restrict(self,batch_idx, prefix_beam):
+		pos = len(prefix_beam)
+		if pos<len(self.tok_prefix):
+			return [self.tok_prefix[pos-1]]
+		elif pos==len(self.tok_prefix):
+			return self.start_toks
+		return self.vocab
 	
-    def decode(self,input_ids):
-        return self.prefix + self.tokenizer.decode(input_ids[len(self.tok_prefix):], skip_special_tokens=True)
+	def decode(self,input_ids):
+		return self.prefix + self.tokenizer.decode(input_ids[len(self.tok_prefix):], skip_special_tokens=True)
 
 class SegmentRestrictor(Restrictor):
+	'''
+	Class used for the constrained generation when using a segment based IMT approach.
+	'''
 	def __init__(self,vocab, tokenizer, target_len, wait_tokens = 3, **kwargs):
 		super().__init__(vocab, tokenizer)
 		if self.eos in self.start_toks:
@@ -235,6 +244,15 @@ class SegmentRestrictor(Restrictor):
 		return mouse_actions, num_corrections, i >= lent
 	
 	def get_segments(self,dp):
+		'''
+		It obtains the segments from the cross matrix.
+
+		Parameters:
+			dp (np.array): Cross matrix obtained from cruce function.
+		
+		Returns:
+			np.array: mask with the indices of the matched words in the target.
+		'''
 		#print('prev',self.prev_tseg)
 		t_seg = -np.ones(dp.shape[0],dtype=int)
 		length = int(self.prev_tseg[0] != -1)
@@ -294,6 +312,17 @@ class SegmentRestrictor(Restrictor):
 			return self.vocab[:self.eos] + self.vocab[self.eos+1:]
 	
 	def get_state(self,input_ids):
+		'''
+		It obtains the current state of the generation.
+
+		Parameters:
+			input_ids (list): Tokens generated until the moment.
+		
+		Returns:
+			int: Index of the segment.
+			int: Index of the token in the segment.
+			int: Last token added that was part of a segment.
+		'''
 		cur_seg = 0
 		last_pos = 0
 		i = 0
@@ -333,33 +362,69 @@ class SegmentRestrictor(Restrictor):
 			return texto
 	
 def cruce(tgt,hyp,lent,lenh):
-    dp = np.zeros((lent+1,lenh+1),dtype=int)
-    for i in range(0,lent):
-        for j in range(0,lenh):
-            if tgt[i] == hyp[j]:
-                dp[i+1,j+1] = dp[i,j] + 1
-    return dp
+	'''
+	It obtains the cross matrix between the target and the hypothesis.
+
+	Parameters:
+		tgt (list): Target.
+		hyp (list): Hypothesis.
+		lent (int): Length of the target.
+		lenh (int): Length of the hypothesis.
+	
+	Returns:
+		np.array: Cross matrix with the length of the coincident segments in target and hypothesis.
+	'''
+	dp = np.zeros((lent+1,lenh+1),dtype=int)
+	for i in range(0,lent):
+		for j in range(0,lenh):
+			if tgt[i] == hyp[j]:
+				dp[i+1,j+1] = dp[i,j] + 1
+	return dp
 
 def lcs(dp, tgt, ini_t, fin_t, ini_h, fin_h):
+	'''
+	It obtains the longest common subsequence between the correspondig indices of the target and the hypothesis.
+
+	Parameters:
+		dp (np.array): Cross matrix obtained from cruce function.
+		tgt (np.array): Target.
+		ini_t (int): Initial index of the target.
+		fin_t (int): Final index of the target.
+		ini_h (int): Initial index of the hypothesis.
+		fin_h (int): Final index of the hypothesis.
+
+	Returns:
+		np.array: Target with the longest common subsequence.
+	'''
     #print('fragmento',(ini_t, fin_t), (ini_h, fin_h))
-    if ini_t >= fin_t or ini_h >= fin_h:
-        return tgt
-    fin_lcs = np.unravel_index(np.argmax(dp[ini_t:fin_t,ini_h:fin_h]), (fin_t-ini_t,fin_h-ini_h))
-    fin_lcs = (fin_lcs[0]+ini_t,fin_lcs[1]+ini_h)
-    if dp[fin_lcs[0],fin_lcs[1]] == 0:
-        return tgt
-    ini_lcs = fin_lcs - dp[fin_lcs]
+	if ini_t >= fin_t or ini_h >= fin_h:
+		return tgt
+	fin_lcs = np.unravel_index(np.argmax(dp[ini_t:fin_t,ini_h:fin_h]), (fin_t-ini_t,fin_h-ini_h))
+	fin_lcs = (fin_lcs[0]+ini_t,fin_lcs[1]+ini_h)
+	if dp[fin_lcs[0],fin_lcs[1]] == 0:
+		return tgt
+	ini_lcs = fin_lcs - dp[fin_lcs]
     # segmento mas largo comun
-    tgt[ini_lcs[0]:fin_lcs[0]] = np.arange(ini_lcs[1],fin_lcs[1])
+	tgt[ini_lcs[0]:fin_lcs[0]] = np.arange(ini_lcs[1],fin_lcs[1])
     # segmentos anteriores
-    if ini_lcs[0] >= ini_t:
-        tgt = lcs(dp,tgt,ini_t,ini_lcs[0]+1,ini_h,ini_lcs[1]+1)
+	if ini_lcs[0] >= ini_t:
+		tgt = lcs(dp,tgt,ini_t,ini_lcs[0]+1,ini_h,ini_lcs[1]+1)
     # segmentos posteriores
-    if fin_lcs[0] < fin_t:
-        tgt = lcs(dp,tgt,fin_lcs[0]+1,fin_t,fin_lcs[1]+1,fin_h)
-    return tgt
+	if fin_lcs[0] < fin_t:
+		tgt = lcs(dp,tgt,fin_lcs[0]+1,fin_t,fin_lcs[1]+1,fin_h)
+	return tgt
 
 def tokenize(sentence, wordTokenizer = TreebankWordTokenizer()):
+	'''
+	Deletes the special characters and separates the words with spaces.
+
+	Parameters:
+		sentence (str): Sentence to tokenize.
+		wordTokenizer (TreebankWordTokenizer): Tokenizer to use.
+	
+	Returns:
+		list: Tokens of the sentence.
+	'''
 	sentence = sentence.replace('…', '...')
 	sentence = sentence.replace('´', '\'')
 	sentence = sentence.replace('\'', ' \' ')
@@ -373,6 +438,16 @@ def tokenize(sentence, wordTokenizer = TreebankWordTokenizer()):
 	return tokens
 
 def detokenize(sentence, wordTokenizer = TreebankWordTokenizer()):
+	'''
+	Inverse operation of the tokenize function.
+
+	Parameters:
+		sentence (str): Sentence to detokenize.
+		wordTokenizer (TreebankWordTokenizer): Tokenizer to use.
+	
+	Returns:
+		list: Tokens of the sentence.
+	'''
 	sentence = sentence.replace(' \' ', '\'')
 	sentence = sentence.replace(' . ', '.')
 	sentence = sentence.replace(' , ', ',')
@@ -381,6 +456,17 @@ def detokenize(sentence, wordTokenizer = TreebankWordTokenizer()):
 	return tokens
 
 def load_model(model_path, args, _dev=None):
+	'''
+	Downloads the model and tokenizer.
+
+	Parameters:
+		model_path (str): Path of the model.
+		args (argparse.Namespace): Arguments of the execution.
+		_dev (str): Device to use.
+	
+	Returns:
+		tuple: Model and tokenizer.
+	'''
 	kwargs = {}
 	if args.quantize:
 		kwargs['quantization_config'] = BitsAndBytesConfig(load_in_8bit=True,device=_dev)
@@ -396,17 +482,10 @@ def load_model(model_path, args, _dev=None):
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base",
 									   src_lang=args.source_code, tgt_lang=args.target_code)
-	elif args.model_name == 'mt5':
-		_mdl = MT5ForConditionalGeneration.from_pretrained(model_path, **kwargs)
-		_tok = AutoTokenizer.from_pretrained("google/mt5-small",
-									   src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'nllb':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
 											src_lang=args.source_code, tgt_lang=args.target_code)
-	elif args.model_name == 'bloom':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path)
-		_tok = AutoTokenizer.from_pretrained("bigscience/bloom-560m")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -415,6 +494,15 @@ def load_model(model_path, args, _dev=None):
 	return _mdl, _tok
 
 def check_language_code(code):
+	'''
+	Adapts the language code from ISO 639 to the format of mBART.
+
+	Parameters:
+		code (str): Language code as in ISO 639.
+	
+	Returns:
+		str: Language code as in mBART.
+	'''
 	if code=='ar':			# Arabic
 		return 'ar_AR'
 	elif code == 'cs':		# Czech
