@@ -1,4 +1,4 @@
-from train2 import *
+from train import *
 
 def read_parameters():
     parser = argparse.ArgumentParser()
