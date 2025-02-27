@@ -185,7 +185,7 @@ def read_parameters():
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-out", "--output", required=False, help="Output file")
 	parser.add_argument("-seg","--segment_based",action='store_true',help='Whether to use segment-based approach or not. Default to prefix-based.')
-	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb','bloom'], help='Model name')
+	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb','bloom','llama','qwen'], help='Model name')
 	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-fin","--final",required=False, default=-1,type=int,help="Final Line")

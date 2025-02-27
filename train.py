@@ -1,6 +1,7 @@
 from transformers import (MBartForConditionalGeneration, MBart50TokenizerFast,
 						M2M100ForConditionalGeneration, M2M100Tokenizer,
-						AutoTokenizer, AutoModelForSeq2SeqLM)
+						AutoTokenizer, AutoModelForSeq2SeqLM,
+						AutoModelForCausalLM)
 from peft import LoraConfig, get_peft_model
 import lightning as L
 from evaluate import load
@@ -105,6 +106,10 @@ def load_model(model_name):
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
 	elif model_name == 'nllb':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+	elif model_name == 'llama':
+		_mdl = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
+	elif model_name == 'qwen':
+		_mdl = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
@@ -129,6 +134,10 @@ def load_tokenizer(args):
 		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base")
 	elif args.model_name == 'nllb':
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
+	elif args.model_name == 'llama':
+		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
+	elif args.model_name == 'qwen':
+		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -140,9 +149,9 @@ def load_datasets(args):
 	'''
 	Loads the training and development datasets
 	'''
-	if 't5' in args.model_name:
-		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'swahili'}
-		prefix = f'translate from {extend[args.source]} to {extend[args.target]}: '
+	if 't5' in args.model_name or 'llama' == args.model_name or 'qwen' == args.model_name:
+		extend = {'en':'English','ca':'Catalan','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili'}
+		prefix = f'translate from {extend[args.source]} to {extend[args.target]} this sentence: '
 	else:
 		prefix = ''
 	shards = [	f"{args.folder}train.{args.source}", 
@@ -284,7 +293,7 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','nllb'],help='Model to train')
+	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','nllb','llama','qwen'],help='Model to train')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use Low-Rank Adaptation or not')
 	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
 	parser.add_argument('-bs','--batch_size',type=int,default=32,help='Batch size')

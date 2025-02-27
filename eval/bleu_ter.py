@@ -83,7 +83,7 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where the dataset is")
 	parser.add_argument("-p","--partition", required=False, default="test", choices=["dev","test"], help="Partition to load")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
-	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','nllb'], help="Model to load")
+	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','nllb','llama','qwen'], help="Model to load")
 	parser.add_argument('-b','--batch_size',required=False,default=64,type=int,help='Batch size for the inference')
 
 	args = parser.parse_args()

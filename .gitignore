@@ -133,3 +133,4 @@ cython_debug/
 .vscode/
 
 *.pdf
+ploter.ipynb

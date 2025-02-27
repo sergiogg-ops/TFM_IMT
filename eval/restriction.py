@@ -5,8 +5,7 @@ from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           M2M100ForConditionalGeneration, M2M100Tokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
-						  MT5ForConditionalGeneration,
-						  BitsAndBytesConfig)
+						  AutoModelForCausalLM, BitsAndBytesConfig)
 
 class Restrictor(ABC):
 	'''
@@ -486,6 +485,12 @@ def load_model(model_path, args, _dev=None):
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
 											src_lang=args.source_code, tgt_lang=args.target_code)
+	elif args.model_name == 'llama':
+		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
+		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
+	elif args.model_name == 'qwen':
+		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
+		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
