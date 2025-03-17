@@ -5,7 +5,7 @@ def read_parameters():
     parser.add_argument("path", help="Path to the checkpoint")
     parser.add_argument("-src", "--source", required=True, help="Source Language")
     parser.add_argument("-trg", "--target", required=True, help="Target Language")
-    parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','mt5','llama3','nllb','bloom'],help='Model contained in the checkpoint')
+    parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','mt5','llama3','nllb','bloom','llama','qwen','eurollm'],help='Model contained in the checkpoint')
     parser.add_argument('-lora','--lora',action='store_true',help='Whether LoRA has been used or not')
 
     args = parser.parse_args()

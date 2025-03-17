@@ -3,7 +3,8 @@ import argparse
 import torch
 import evaluate
 from restriction import load_model, check_language_code
-from transformers import TranslationPipeline
+from transformers import TranslationPipeline, Text2TextGenerationPipeline
+from tqdm import tqdm
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -33,25 +34,53 @@ def translate(args):
 	src_lines = read_file(file_name)
 	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
 	trg_lines = read_file(file_name)
-	if 't5' in args.model_name:
+	if 't5' in args.model_name or 'llama' == args.model_name or 'qwen' == args.model_name:
 		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
-		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
-		src_lines = [prompt + l for l in src_lines]
+		#prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]} without further explanation: '
+		prompt = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.\nSentence: {sent}\nTranslation: '
+		src_lines = [prompt.format(src_lang=extend[args.source],tgt_lang=extend[args.target],sent=l) for l in src_lines]
+		#trg_lines = [prompt.format(src_lang=extend[args.source],tgt_lang=extend[args.target],sent=l) for l in trg_lines]
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
 	model, tokenizer = load_model(model_path, args, device)
+
+	if tokenizer.pad_token is None:
+		tokenizer.pad_token = tokenizer.eos_token
+		tokenizer.padding_side = 'left'
+		model.config.pad_token_id = tokenizer.pad_token_id
+		model.pad_token = tokenizer.pad_token
 	#|========================================================
 	MAX_TOKENS = 400
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
-	translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
-	#|========================================================
-	#| TRANSLATE
 	print('Traduciendo...')
-	hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
-	hypothesis = [t['translation_text'] for t in hypothesis]
+	if args.model_name in ['llama','qwen']:
+		outputs = []
+		# Process inputs in batches
+		for i in tqdm(range(0, len(src_lines), args.batch_size)):
+			model.to(device)
+			batch = src_lines[i:i + args.batch_size]
+			input_ids = tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to(device)
+			with torch.no_grad():
+				output = model.generate(**input_ids, max_new_tokens=128, pad_token_id=tokenizer.pad_token_id)
+			decoded_outputs = tokenizer.batch_decode(output, skip_special_tokens=True)
+			outputs.extend(decoded_outputs)
+		with open('output.txt','w') as f:
+			f.write('\n-------------------------------------\n'.join(outputs))
+		hypothesis = [o.replace(i,'') for i,o in zip(src_lines,outputs)]
+		with open('hyp.txt','w') as f:
+			f.write('\n'.join(hypothesis))
+	else:
+		translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
+		hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
+		hypothesis = [t['translation_text'] for t in hypothesis]
 
+	# for orig, hyp in zip(trg_lines, hypothesis):
+	# 	print(orig)
+	# 	print('+')
+	# 	print(hyp)
+	# 	print('------------------------------')
 	print('Evaluando metricas...')
 	bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]
 	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]
@@ -83,7 +112,7 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where the dataset is")
 	parser.add_argument("-p","--partition", required=False, default="test", choices=["dev","test"], help="Partition to load")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
-	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','nllb','llama','qwen'], help="Model to load")
+	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','nllb','llama','qwen','eurollm'], help="Model to load")
 	parser.add_argument('-b','--batch_size',required=False,default=64,type=int,help='Batch size for the inference')
 
 	args = parser.parse_args()

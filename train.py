@@ -1,7 +1,7 @@
 from transformers import (MBartForConditionalGeneration, MBart50TokenizerFast,
 						M2M100ForConditionalGeneration, M2M100Tokenizer,
 						AutoTokenizer, AutoModelForSeq2SeqLM,
-						AutoModelForCausalLM)
+						AutoModelForCausalLM, AutoModelForImageTextToText)
 from peft import LoraConfig, get_peft_model
 import lightning as L
 from evaluate import load
@@ -20,31 +20,35 @@ class MosesCorpus(torch.utils.data.Dataset):
 	'''
 	Pytorch dataset from a moses format corpus
 	'''
-	def __init__(self,source,target,tok,prefix=''):
+	def __init__(self,source,target,tok,prompt=''):
 		'''
 		Parameters:
 			source (str): Path to the source file
 			target (str): Path to the target file
 			tok (Tokenizer): Tokenizer to use
-			prefix (str): Prefix to add to the source text
+			prompt (str): prompt to add to the source text
 		'''
 		self.src = []
 		with open(source,'r') as file:
 			self.src = [l for l in file]
-		self.src = [prefix + l for l in self.src]
+		self.src = [prompt.format(sent=l) for l in self.src]
 		self.tgt = []
 		with open(target,'r') as file:
 			self.tgt = [l for l in file]
-		self.tgt = [l for l in self.tgt]
-		self.inputs = tok(self.src, text_target=self.tgt, max_length=128,truncation=True, padding=True, return_tensors='pt')
+		self.tgt = [src + tgt for src, tgt in zip(self.src,self.tgt)]
+		# if not tok.pad_token:
+		# 	tok.pad_token = tok.eos_token
+		#self.inputs = tok(self.src, text_target=self.tgt, max_length=128,truncation=True, padding=True, return_tensors='pt')
     
 	def __len__(self):
 		return len(self.src)
 	
 	def __getitem__(self,idx):
-		return {'input_ids': self.inputs['input_ids'][idx], 
-		  'attention_mask': self.inputs['attention_mask'][idx], 
-		  'labels': self.inputs['labels'][idx]}
+		# return {'input_ids': self.inputs['input_ids'][idx], 
+		#   'attention_mask': self.inputs['attention_mask'][idx], 
+		#   'labels': self.inputs['labels'][idx]}
+		return {'source': self.src[idx],
+		  	'target': self.tgt[idx]}
 
 class TranslationModel(L.LightningModule):
 	'''
@@ -63,23 +67,36 @@ class TranslationModel(L.LightningModule):
 		self.metric = evaluate.load("sacrebleu")
 		self.lr = lr
 	
-	def forward(self, **inputs):
+	def forward(self, inputs):
+		input_ids = inputs['input_ids']
+		labels = inputs['labels']
+		dif = input_ids.shape[-1] - labels.shape[-1]
+		if dif > 0:
+			labels = torch.nn.functional.pad(labels, (0,dif), value=self.tokenizer.pad_token_id)
+		elif dif < 0:
+			input_ids = torch.nn.functional.pad(input_ids, (0,-dif), value=self.tokenizer.pad_token_id)
+			inputs['attention_mask'] = torch.nn.functional.pad(inputs['attention_mask'], (0,-dif), value=0)
+		inputs['input_ids'] = input_ids
+		inputs['labels'] = labels
 		return self.model(**inputs)
 	
 	def training_step(self, batch, batch_idx):
-		outputs = self.model(**batch)
+		inputs = self.tokenizer(batch['source'], padding=True, text_target=batch['target'], return_tensors='pt').to('cuda')
+		outputs = self.forward(inputs)
 		loss = outputs.loss
-		self.log('train_loss', loss)
+		metrics = {'train_loss': loss, 'max_len': outputs.logits.shape[-1]}
+		self.log_dict(metrics)
 		return loss
 	
 	def validation_step(self, batch, batch_idx):
-		outputs = self.model.generate(**batch, max_new_tokens=128)
+		inputs = self.tokenizer(batch['source'], padding=True, text_target=batch['target'], return_tensors='pt').to('cuda')
+		outputs = self.model.generate(**inputs, max_new_tokens=128)
 		hyp = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-		ref = self.tokenizer.batch_decode(batch['labels'], skip_special_tokens=True)
+		ref = batch['target']
 		bleu = self.metric.compute(predictions=hyp, references=ref)
-		loss = self.model(**batch).loss
+		loss = self.forward(inputs).loss
 		metrics = {'val_loss': loss, 'val_bleu': bleu['score']}
-		self.log_dict(metrics)
+		self.log_dict(metrics,batch_size=1)
 		return metrics
 
 	def configure_optimizers(self):
@@ -107,9 +124,14 @@ def load_model(model_name):
 	elif model_name == 'nllb':
 		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
 	elif model_name == 'llama':
-		_mdl = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
+		_mdl = AutoModelForCausalLM.from_pretrained(
+			"meta-llama/Llama-3.2-1B-Instruct",
+			token='hf aut token'
+		)
 	elif model_name == 'qwen':
-		_mdl = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+		_mdl = AutoModelForImageTextToText.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+	elif model_name == 'eurollm':
+		_mdl = AutoModelForCausalLM.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
@@ -135,9 +157,12 @@ def load_tokenizer(args):
 	elif args.model_name == 'nllb':
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
 	elif args.model_name == 'llama':
-		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
+		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct",
+									   token='hf aut token')
 	elif args.model_name == 'qwen':
-		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+		_tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+	elif args.model_name == 'eurollm':
+		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -149,20 +174,20 @@ def load_datasets(args):
 	'''
 	Loads the training and development datasets
 	'''
-	if 't5' in args.model_name or 'llama' == args.model_name or 'qwen' == args.model_name:
+	if 't5' in args.model_name or args.model_name in ['llama','qwen','eurollm']:
 		extend = {'en':'English','ca':'Catalan','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili'}
-		prefix = f'translate from {extend[args.source]} to {extend[args.target]} this sentence: '
+		prompt = f'Translate the sentence from {extend[args.source]} to {extend[args.target]} without further explanation.' + '\nSentence: {sent}\nTranslation: '
 	else:
-		prefix = ''
+		prompt = '{sent}'
 	shards = [	f"{args.folder}train.{args.source}", 
 				f"{args.folder}train.{args.target}"
 				]
-	training = MosesCorpus(shards[0],shards[1],TOKENIZER,prefix = prefix)
+	training = MosesCorpus(shards[0],shards[1],TOKENIZER,prompt = prompt)
 
 	shards = [	f"{args.folder}dev.{args.source}",
 				f"{args.folder}dev.{args.target}"
 				]	
-	development = MosesCorpus(shards[0],shards[1],TOKENIZER, prefix = prefix)
+	development = MosesCorpus(shards[0],shards[1],TOKENIZER, prompt = prompt)
 	return training, development
 
 def check_language_code(code):
@@ -293,7 +318,7 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','nllb','llama','qwen'],help='Model to train')
+	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','nllb','llama','qwen','eurollm'],help='Model to train')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use Low-Rank Adaptation or not')
 	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
 	parser.add_argument('-bs','--batch_size',type=int,default=32,help='Batch size')
@@ -312,6 +337,10 @@ def main():
 	METRIC = load("sacrebleu")
 	MODEL = load_model(args.model_name)
 	TOKENIZER = load_tokenizer(args)
+	if TOKENIZER.pad_token is None:
+		TOKENIZER.pad_token = TOKENIZER.eos_token
+		TOKENIZER.padding_side = 'left'
+		MODEL.config.pad_token_id = TOKENIZER.pad_token_id
 
 	if args.lora:
 		lora_config = LoraConfig(
@@ -333,15 +362,17 @@ def main():
 	callbacks = [L.pytorch.callbacks.EarlyStopping(monitor='val_bleu', mode='max', patience=3, min_delta=1e-5),
                 L.pytorch.callbacks.ModelCheckpoint(monitor='val_bleu', mode='max', save_top_k=3, save_weights_only=True,
 								  dirpath=f'models/{args.model_name}_{args.source+args.target}')]
+	accumulate = 32 // args.batch_size if args.batch_size < 32 else 1
 	trainer = L.Trainer(max_epochs=args.epochs,
 					 precision=16 if fp16 else 32,
 					 val_check_interval=0.2,
+					 accumulate_grad_batches=accumulate,
 					 default_root_dir=f'models/{args.model_name}_{args.source+args.target}',
 					 callbacks=callbacks)
 	
-	trainer.validate(model=translator,dataloaders=dev_dataloader)
+	#trainer.validate(model=translator,dataloaders=dev_dataloader)
 	trainer.fit(model=translator, train_dataloaders=train_dataloader, val_dataloaders=dev_dataloader)
-	trainer.validate(model=translator,dataloaders=dev_dataloader)
+	#trainer.validate(model=translator,dataloaders=dev_dataloader)
 
 
 

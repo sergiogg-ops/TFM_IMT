@@ -5,7 +5,7 @@ from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           M2M100ForConditionalGeneration, M2M100Tokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
-						  AutoModelForCausalLM, BitsAndBytesConfig)
+						  AutoModelForCausalLM, AutoModelForImageTextToText)
 
 class Restrictor(ABC):
 	'''
@@ -467,8 +467,8 @@ def load_model(model_path, args, _dev=None):
 		tuple: Model and tokenizer.
 	'''
 	kwargs = {}
-	if args.quantize:
-		kwargs['quantization_config'] = BitsAndBytesConfig(load_in_8bit=True,device=_dev)
+	# if args.quantize:
+	# 	kwargs['quantization_config'] = BitsAndBytesConfig(load_in_8bit=True,device=_dev)
 	if args.model_name == 'mbart':
 		_mdl = MBartForConditionalGeneration.from_pretrained(model_path, **kwargs)
 		_tok = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt", 
@@ -487,15 +487,19 @@ def load_model(model_path, args, _dev=None):
 											src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'llama':
 		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
-		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Llama-8B")
+		#_mdl = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B-Instruct", **kwargs)
+		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct", padding_side='left')
 	elif args.model_name == 'qwen':
-		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
-		_tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+		_mdl = AutoModelForImageTextToText.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+		_tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+	elif args.model_name == 'eurollm':
+		_mdl = AutoModelForCausalLM.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
+		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
-	if not args.quantize:
-		_mdl.to(_dev)
+	# if not args.quantize:
+	# 	_mdl.to(_dev)
 	return _mdl, _tok
 
 def check_language_code(code):

@@ -46,9 +46,9 @@ def translate(args):
 	else:
 		trg_lines = read_file(file_name)
 
-	if 't5' in args.model_name or args.model_name == 'bloom':
+	if 't5' in args.model_name or args.model_name in ['bloom','qwen','llama']:
 		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
-		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]}: '
+		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]} without further explanation: '
 		src_lines = [prompt + l for l in src_lines]
 
 	#| PREPARE DOCUMENT TO WRITE
