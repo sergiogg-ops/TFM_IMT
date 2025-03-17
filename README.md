@@ -1,6 +1,6 @@
 # Interactive machine translation
 
-This git contains code to train several LLMs and perform simulated sesions of interactiva machine translation based in prefixes and segments. This is:
+This git contains code to train several LLMs and perform simulated sesions of interactive machine translation based in prefixes and segments. This is:
 
 1. The system translates the sentence to the target language, offering an initial hypothesis
 2. If the translation is good enough the "human" can stop the proccess. Also, one can say that the best solution is the result of concatenate all the validated segments.
