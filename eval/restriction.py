@@ -7,6 +7,8 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
 						  AutoModelForCausalLM, AutoModelForImageTextToText)
 
+PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.\nSentence: {sent}\nTranslation: '
+
 class Restrictor(ABC):
 	'''
 	Parent class for the implementation of the constrained search of the response
@@ -454,7 +456,7 @@ def detokenize(sentence, wordTokenizer = TreebankWordTokenizer()):
 	tokens = wordTokenizer.tokenize(sentence)
 	return tokens
 
-def load_model(model_path, args, _dev=None):
+def load_model(model_path, args, _dev='cpu'):
 	'''
 	Downloads the model and tokenizer.
 
@@ -486,9 +488,8 @@ def load_model(model_path, args, _dev=None):
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
 											src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'llama':
-		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
-		#_mdl = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B-Instruct", **kwargs)
-		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct", padding_side='left')
+		_mdl = AutoModelForCausalLM.from_pretrained(model_path,token='hf_token', **kwargs)
+		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct",token='hf_token', padding_side='left')
 	elif args.model_name == 'qwen':
 		_mdl = AutoModelForImageTextToText.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
 		_tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
@@ -500,7 +501,41 @@ def load_model(model_path, args, _dev=None):
 		sys.exit(1)
 	# if not args.quantize:
 	# 	_mdl.to(_dev)
+	_mdl = _mdl.to(_dev)
+	_mdl.eval()
+
+	if _tok.pad_token is None:
+		_tok.pad_token = _tok.eos_token
+		_tok.padding_side = 'left'
+		_mdl.config.pad_token_id = _tok.pad_token_id
 	return _mdl, _tok
+
+def read_file(name):
+	'''
+	Opens a file and split the lines into a list
+
+	Parameters:
+		name (str): Name of the file to open
+	
+	Returns:
+		list: List with the lines of the file
+	'''
+	file_r = open(name, 'r')
+	lines = file_r.read().splitlines()
+	file_r.close()
+	return lines
+
+def load_data(folder, partition, model_name, source, target):
+	file_name = '{0}/{1}.{2}'.format(folder, partition, source)
+	src_lines = read_file(file_name)
+	file_name = '{0}/{1}.{2}'.format(folder, partition, target)
+	trg_lines = read_file(file_name)
+	if 't5' in model_name or 'llama' == model_name or 'qwen' == model_name:
+		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
+		#prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]} without further explanation: '
+		src_lines = [PROMPT.format(src_lang=extend[source],tgt_lang=extend[target],sent=l) for l in src_lines]
+		#trg_lines = [prompt.format(src_lang=extend[args.source],tgt_lang=extend[args.target],sent=l) for l in trg_lines]
+	return src_lines, trg_lines
 
 def check_language_code(code):
 	'''

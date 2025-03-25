@@ -2,26 +2,13 @@ import argparse
 
 import torch
 import evaluate
-from restriction import load_model, check_language_code
+from restriction import load_model, check_language_code, load_data
 from transformers import TranslationPipeline, Text2TextGenerationPipeline
 from tqdm import tqdm
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-def read_file(name):
-	'''
-	Opens a file and split the lines into a list
 
-	Parameters:
-		name (str): Name of the file to open
-	
-	Returns:
-		list: List with the lines of the file
-	'''
-	file_r = open(name, 'r')
-	lines = file_r.read().splitlines()
-	file_r.close()
-	return lines
 
 def translate(args):
 	'''
@@ -30,16 +17,7 @@ def translate(args):
 	print('Cargando modelo...')
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.source)
-	src_lines = read_file(file_name)
-	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
-	trg_lines = read_file(file_name)
-	if 't5' in args.model_name or 'llama' == args.model_name or 'qwen' == args.model_name:
-		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
-		#prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]} without further explanation: '
-		prompt = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.\nSentence: {sent}\nTranslation: '
-		src_lines = [prompt.format(src_lang=extend[args.source],tgt_lang=extend[args.target],sent=l) for l in src_lines]
-		#trg_lines = [prompt.format(src_lang=extend[args.source],tgt_lang=extend[args.target],sent=l) for l in trg_lines]
+	src_lines, trg_lines = load_data(args.folder, args.source, args.model_name, args.target, args.partition)
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model

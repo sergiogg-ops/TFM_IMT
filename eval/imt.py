@@ -35,21 +35,10 @@ def translate(args):
 	#try:
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.source)
+	src_lines, trg_lines = R.load_data(args.folder, args.source, args.model_name, args.target, args.partition)
 	if args.final > -1:
-		src_lines = read_file(file_name)[:args.final]
-	else:
-		src_lines = read_file(file_name)
-	file_name = '{0}/{1}.{2}'.format(args.folder, args.partition, args.target)
-	if args.final > -1:
-		trg_lines = read_file(file_name)[:args.final]
-	else:
-		trg_lines = read_file(file_name)
-
-	if 't5' in args.model_name or args.model_name in ['bloom','qwen','llama']:
-		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
-		prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]} without further explanation: '
-		src_lines = [prompt + l for l in src_lines]
+		src_lines = src_lines[:args.final]
+		trg_lines = trg_lines[:args.final]
 
 	#| PREPARE DOCUMENT TO WRITE
 	if args.output:
@@ -105,7 +94,7 @@ def translate(args):
 
 		ite = 0
 		MAX_TOKENS = 400
-		restrictor = Restrictor(VOCAB,tokenizer,len(R.tokenize(c_trg,wordTokenizer=wordTokenizer)))
+		restrictor = Restrictor(VOCAB,tokenizer)#,len(R.tokenize(c_trg,wordTokenizer=wordTokenizer)))
 		ended = False
 		ini = time()
 		generated_tokens = model.generate(**encoded_src,
@@ -186,7 +175,7 @@ def read_parameters():
 	parser.add_argument("-out", "--output", required=False, help="Output file")
 	parser.add_argument("-seg","--segment_based",action='store_true',help='Whether to use segment-based approach or not. Default to prefix-based.')
 	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb','bloom','llama','qwen'], help='Model name')
-	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate')
+	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate, default to test')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-fin","--final",required=False, default=-1,type=int,help="Final Line")
 	parser.add_argument("-wsr","--word_stroke", required=False, default=0, type=float, help="Last word stroke ratio")
