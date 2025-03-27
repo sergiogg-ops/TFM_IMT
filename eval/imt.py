@@ -50,7 +50,8 @@ def translate(args):
 	if args.output:
 		file_name = '{0}/{1}.{2}'.format(args.folder,args.output, args.target)
 	else:
-		file_name = '{0}/sb_imt_{1}.{2}'.format(args.folder, args.model_name, args.target)
+		name = 'sb' if args.segment_based else 'pb'
+		file_name = f'{args.folder}/{name}_imt_{args.model_name}.{args.target}'
 	file_out = open(file_name, 'w')
 	file_out.write(str(args))
 	file_out.write("\n")
@@ -89,38 +90,42 @@ def translate(args):
 		n_chars = len(trg_lines[i])
 
 		# Convert them to ids
-		added_prompt = prompt.format(sent=c_src)
-		encoded_src = tokenizer(added_prompt, return_tensors="pt").to(device)
+		query = prompt.format(sent=c_src)
+		encoded_src = tokenizer(query, return_tensors="pt").to(device)
 		encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 		if len(encoded_trg) > 512:
 			continue
 
 		# Prints
 		if args.verbose:
-			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,c_src,c_trg))
+			# if args.model_name in prompt_models:
+			# 	corrected_src = c_src[len(query):]
+			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,query,c_trg))
 
 		ite = 0
 		MAX_TOKENS = 400
-		restrictor = Restrictor(VOCAB,tokenizer)#,len(R.tokenize(c_trg,wordTokenizer=wordTokenizer)))
+		start_char = 'Ġ' if args.model_name == 'llama' else '▁'
+		restrictor = Restrictor(VOCAB,tokenizer,query,start_char)#,len(R.tokenize(c_trg,wordTokenizer=wordTokenizer)))
 		ended = False
-		ini = time()
-		generated_tokens = model.generate(**encoded_src,
-								#forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
-								max_new_tokens=MAX_TOKENS).tolist()[0]
-		output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-		print('ORIGINAL:',output)
-		if args.model_name in prompt_models:
-			output = output[len(added_prompt):]
-		tiempo_total += time() - ini 
 		iteraciones += 1
-		if len(generated_tokens) >= MAX_TOKENS:
-			MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-
-		if args.verbose:
-			print("ITE {0}: {1}".format(ite, output))
 		while not ended:
 			# Generate the translation
-			ite += 1
+			remove_sos = args.model_name in prompt_models
+			restrictor.prepare(remove_sos=remove_sos,remove_eos=not remove_sos)
+
+			ini = time()
+			generated_tokens = model.generate(**encoded_src,
+							max_new_tokens=MAX_TOKENS,
+							prefix_allowed_tokens_fn=restrictor.restrict).tolist()[0]
+			output = restrictor.decode(generated_tokens)
+			#if args.model_name in prompt_models:
+			# 	output = output[len(query):]
+			tiempo_total += time() - ini
+			iteraciones += 1
+			if len(generated_tokens) >= MAX_TOKENS:
+				MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
+			elif len(generated_tokens) > 3/4 * MAX_TOKENS:
+				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
 
 			actions, corrections, ended = restrictor.check_segments(c_trg, output, verbose=args.verbose)
 			word_strokes += corrections
@@ -128,28 +133,8 @@ def translate(args):
 			if args.verbose:
 				print('Mouse actions:',actions)
 				print('Word strokes:',corrections)
-
-			if not ended:
-				restrictor.prepare(args.model_name)
-
-				ini = time()
-				raw_output = model.generate(**encoded_src,
-								max_new_tokens=MAX_TOKENS,
-								prefix_allowed_tokens_fn=restrictor.restrict)
-				generated_tokens = raw_output.tolist()[0]
-				output = restrictor.decode(generated_tokens)
-				print('ORIGINAL:',output)
-				if args.model_name in prompt_models:
-					output = output[len(added_prompt):]
-				tiempo_total += time() - ini
-				iteraciones += 1
-				if len(generated_tokens) >= MAX_TOKENS:
-					MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
-				elif len(generated_tokens) > 3/4 * MAX_TOKENS:
-					MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-
-			if args.verbose:
 				print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
+			ite += 1
 		total_words += n_words
 		total_chars += n_chars
 		total_ws += word_strokes

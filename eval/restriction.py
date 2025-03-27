@@ -13,12 +13,13 @@ class Restrictor(ABC):
 	'''
 	Parent class for the implementation of the constrained search of the response
 	'''
-	def __init__(self, vocab, tokenizer):
+	def __init__(self, vocab, tokenizer,prompt='', start='▁'):
 		self.vocab = vocab
-		self.start_char = '▁'
+		self.start_char = start
 		self.start_toks = [value for key,value in tokenizer.get_vocab().items() if key[0] == self.start_char]
 		self.tokenizer = tokenizer
 		self.eos = self.tokenizer.get_vocab()[tokenizer.eos_token]
+		self.len_prompt = len(tokenizer.encode(prompt)) if prompt else 0
 
 	@abstractmethod
 	def check_segments(self,tgt,hyp,verbose=False):
@@ -76,8 +77,8 @@ class PrefixRestrictor(Restrictor):
 	'''
 	Class used for the constrained generation when using a prefix based IMT approach.
 	'''
-	def __init__(self, vocab, tokenizer, **kwargs):
-		super().__init__(vocab,tokenizer)
+	def __init__(self, vocab, tokenizer,prompt = '', start='▁', **kwargs):
+		super().__init__(vocab,tokenizer,prompt,start)
 		self.prefix = ''
 		self.tok_prefix = []
 
@@ -88,14 +89,16 @@ class PrefixRestrictor(Restrictor):
 		word_strokes = 0
 
 		target = tokenize(target)
+		#print('TGT:',target)
 		hyp = tokenize(hyp)
+		#print('HYP:',hyp)
 
 		i = 0
 		while i < len(target):
-		#for i in range(len(target)):
 			if len(hyp)<=i:
 				correction = 1
 				prefix.append(target[i])
+				print('Correction:', prefix[-correction:])
 				break
 			elif target[i] == hyp[i]:
 				prefix.append(target[i])
@@ -105,7 +108,9 @@ class PrefixRestrictor(Restrictor):
 				if target[i] == hyp[i][:len(target[i])] and len(target)>i+1:
 					correction = 2
 					prefix.append(target[i+1])
-					break
+				print('Correction:', prefix[-correction:])
+				break
+			#print(i,':',target[i],hyp[i])
 			i+=1
 		prefix = ' '.join(prefix)
 		prefix += ' '
@@ -124,28 +129,39 @@ class PrefixRestrictor(Restrictor):
 		if verbose:
 			print('Prefix:', prefix)
 			print('Correction:', correction)
+		#exit()
 		return mouse_actions, word_strokes, i >= len(target)
 	
-	def prepare(self, model_name):
-		self.tok_prefix = self.tokenizer.encode(self.prefix)[:-1]
+	def prepare(self, remove_sos = False, remove_eos = False):
+		self.tok_prefix = self.tokenizer.encode(self.prefix)
+		if remove_sos:
+			self.tok_prefix = self.tok_prefix[1:]
+		if remove_eos:
+			self.tok_prefix = self.tok_prefix[:-1]
 	
 	def restrict(self,batch_idx, prefix_beam):
-		pos = len(prefix_beam)
-		if pos<len(self.tok_prefix):
-			return [self.tok_prefix[pos-1]]
-		elif pos==len(self.tok_prefix):
-			return self.start_toks
+		pos = len(prefix_beam) - self.len_prompt
+		len_prefix = len(self.tok_prefix)
+		# print('gen',prefix_beam)
+		# print('pos:',pos)
+		# print(self.tok_prefix)
+		if len_prefix>0:
+			if pos<len_prefix:
+				return [self.tok_prefix[pos]]
+			elif pos==len_prefix:
+				return self.start_toks
 		return self.vocab
 	
 	def decode(self,input_ids):
-		return self.prefix + self.tokenizer.decode(input_ids[len(self.tok_prefix):], skip_special_tokens=True)
+		out_toks = input_ids[self.len_prompt+len(self.tok_prefix):]
+		return self.prefix + self.tokenizer.decode(out_toks, skip_special_tokens=True)
 
 class SegmentRestrictor(Restrictor):
 	'''
 	Class used for the constrained generation when using a segment based IMT approach.
 	'''
-	def __init__(self,vocab, tokenizer, target_len, wait_tokens = 3, **kwargs):
-		super().__init__(vocab, tokenizer)
+	def __init__(self,vocab, tokenizer, target_len, prompt='', start='▁', wait_tokens = 3, **kwargs):
+		super().__init__(vocab, tokenizer,prompt,start)
 		if self.eos in self.start_toks:
 			self.start_toks.remove(self.eos)
 		# segmentos
@@ -271,11 +287,12 @@ class SegmentRestrictor(Restrictor):
 		t_seg = lcs(dp, t_seg, last_seg, dp.shape[0],max(0,t_seg[last_seg]), dp.shape[1])
 		return t_seg
 	
-	def prepare(self, model_name):
-		if 't5' in model_name:
-			self.tok_segments = [self.tokenizer.encode(s)[:-1] for s in self.segments]
-		else:
-			self.tok_segments = [self.tokenizer.encode(s)[1:-1] for s in self.segments]
+	def prepare(self, remove_sos = False, remove_eos = False):
+		self.tok_segments = [self.tokenizer.encode(s) for s in self.segments]
+		if remove_sos:
+			self.tok_segments = [seg[1:] for seg in self.tok_segments]
+		if remove_eos:
+			self.tok_segments = [seg[:-1] for seg in self.tok_segments]
 	
 	def restrict(self,batch_id, input_ids):
 		idx_seg, idx_tok,last_match = self.get_state(input_ids)
@@ -507,7 +524,7 @@ def load_model(model_path, args, _dev='cpu'):
 	if _tok.pad_token is None:
 		_tok.pad_token = _tok.eos_token
 		_tok.padding_side = 'left'
-		_mdl.config.pad_token_id = _tok.pad_token_id
+		_mdl.config.pad_token_id = _mdl.config.eos_token_id
 	return _mdl, _tok
 
 def read_file(name):
@@ -530,11 +547,6 @@ def load_data(folder, partition, model_name, source, target):
 	src_lines = read_file(file_name)
 	file_name = '{0}/{1}.{2}'.format(folder, partition, target)
 	trg_lines = read_file(file_name)
-	if 't5' in model_name or 'llama' == model_name or 'qwen' == model_name:
-		extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
-		#prompt = f'Translate the following sentence from {extend[args.source]} to {extend[args.target]} without further explanation: '
-		src_lines = [PROMPT.format(src_lang=extend[source],tgt_lang=extend[target],sent=l) for l in src_lines]
-		#trg_lines = [prompt.format(src_lang=extend[args.source],tgt_lang=extend[args.target],sent=l) for l in trg_lines]
 	return src_lines, trg_lines
 
 def check_language_code(code):
