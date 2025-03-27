@@ -12,6 +12,8 @@ import restriction as R
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
+extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
+prompt_models = ['flant5','llama','qwen','eurollm']
 
 def read_file(name):
 	'''
@@ -35,7 +37,11 @@ def translate(args):
 	#try:
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	src_lines, trg_lines = R.load_data(args.folder, args.source, args.model_name, args.target, args.partition)
+	src_lines, trg_lines = R.load_data(args.folder, args.partition, args.model_name, args.source, args.target)
+	if args.model_name in prompt_models:
+		prompt = f'Translate the sentence from {extend[args.source]} to {extend[args.target]} without further explanation.'+ '\nSentence: {sent}\nTranslation: '
+	else:
+		prompt = '{sent}'
 	if args.final > -1:
 		src_lines = src_lines[:args.final]
 		trg_lines = trg_lines[:args.final]
@@ -83,7 +89,8 @@ def translate(args):
 		n_chars = len(trg_lines[i])
 
 		# Convert them to ids
-		encoded_src = tokenizer(c_src, return_tensors="pt").to(device)
+		added_prompt = prompt.format(sent=c_src)
+		encoded_src = tokenizer(added_prompt, return_tensors="pt").to(device)
 		encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 		if len(encoded_trg) > 512:
 			continue
@@ -101,6 +108,9 @@ def translate(args):
 								#forced_bos_token_id=tokenizer.lang_code_to_id[args.target_code],
 								max_new_tokens=MAX_TOKENS).tolist()[0]
 		output = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+		print('ORIGINAL:',output)
+		if args.model_name in prompt_models:
+			output = output[len(added_prompt):]
 		tiempo_total += time() - ini 
 		iteraciones += 1
 		if len(generated_tokens) >= MAX_TOKENS:
@@ -128,6 +138,9 @@ def translate(args):
 								prefix_allowed_tokens_fn=restrictor.restrict)
 				generated_tokens = raw_output.tolist()[0]
 				output = restrictor.decode(generated_tokens)
+				print('ORIGINAL:',output)
+				if args.model_name in prompt_models:
+					output = output[len(added_prompt):]
 				tiempo_total += time() - ini
 				iteraciones += 1
 				if len(generated_tokens) >= MAX_TOKENS:
@@ -173,7 +186,7 @@ def read_parameters():
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
 	parser.add_argument("-model", "--model", required=False, help="Model to load")
 	parser.add_argument("-out", "--output", required=False, help="Output file")
-	parser.add_argument("-seg","--segment_based",action='store_true',help='Whether to use segment-based approach or not. Default to prefix-based.')
+	parser.add_argument("-seg","--segment_based",action='store_true', default=False,help='Whether to use segment-based approach or not. Default to prefix-based.')
 	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb','bloom','llama','qwen'], help='Model name')
 	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate, default to test')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
