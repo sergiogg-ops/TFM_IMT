@@ -1,7 +1,8 @@
 from transformers import (MBartForConditionalGeneration, MBart50TokenizerFast,
 						M2M100ForConditionalGeneration, M2M100Tokenizer,
 						AutoTokenizer, AutoModelForSeq2SeqLM,
-						AutoModelForCausalLM, AutoModelForImageTextToText)
+						AutoModelForCausalLM, AutoModelForImageTextToText,
+						AutoProcessor, AutoModelForImageTextToText)
 from peft import LoraConfig, get_peft_model
 import lightning as L
 from evaluate import load
@@ -126,12 +127,14 @@ def load_model(model_name):
 	elif model_name == 'llama':
 		_mdl = AutoModelForCausalLM.from_pretrained(
 			"meta-llama/Llama-3.2-1B-Instruct",
-			token='hf aut token'
+			token='hf_token'
 		)
 	elif model_name == 'qwen':
 		_mdl = AutoModelForImageTextToText.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
 	elif model_name == 'eurollm':
 		_mdl = AutoModelForCausalLM.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
+	elif model_name == 'gemma':
+		_mdl = AutoModelForImageTextToText.from_pretrained("google/gemma-3-4b-it",token='hf_token')
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
@@ -158,11 +161,13 @@ def load_tokenizer(args):
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
 	elif args.model_name == 'llama':
 		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct",
-									   token='hf aut token')
+									   token='hf_token')
 	elif args.model_name == 'qwen':
 		_tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
 	elif args.model_name == 'eurollm':
 		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
+	elif args.model_name == 'gemma':
+		_tok = AutoProcessor.from_pretrained("google/gemma-3-4b-it",token='hf_token')
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)

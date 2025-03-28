@@ -5,7 +5,8 @@ from nltk.tokenize.treebank import TreebankWordTokenizer
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           M2M100ForConditionalGeneration, M2M100Tokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
-						  AutoModelForCausalLM, AutoModelForImageTextToText)
+						  AutoModelForCausalLM, AutoModelForImageTextToText,
+						  AutoProcessor, AutoModelForImageTextToText)
 
 PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.\nSentence: {sent}\nTranslation: '
 
@@ -160,7 +161,7 @@ class SegmentRestrictor(Restrictor):
 	'''
 	Class used for the constrained generation when using a segment based IMT approach.
 	'''
-	def __init__(self,vocab, tokenizer, target_len, prompt='', start='▁', wait_tokens = 3, **kwargs):
+	def __init__(self,vocab, tokenizer, target_len = 0, prompt='', start='▁', wait_tokens = 3, **kwargs):
 		super().__init__(vocab, tokenizer,prompt,start)
 		if self.eos in self.start_toks:
 			self.start_toks.remove(self.eos)
@@ -513,6 +514,9 @@ def load_model(model_path, args, _dev='cpu'):
 	elif args.model_name == 'eurollm':
 		_mdl = AutoModelForCausalLM.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
 		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
+	elif args.model_name == 'gemma':
+		_mdl = AutoModelForImageTextToText.from_pretrained("google/gemma-3-4b-it",token='hf_token')
+		_tok = AutoProcessor.from_pretrained("google/gemma-3-4b-it",token='hf_token')
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -542,7 +546,7 @@ def read_file(name):
 	file_r.close()
 	return lines
 
-def load_data(folder, partition, model_name, source, target):
+def load_data(folder, partition, source, target):
 	file_name = '{0}/{1}.{2}'.format(folder, partition, source)
 	src_lines = read_file(file_name)
 	file_name = '{0}/{1}.{2}'.format(folder, partition, target)

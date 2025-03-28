@@ -10,10 +10,11 @@ import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
 import restriction as R
 
+MAX_TOKENS = 512 # Maximum number of tokens to generate
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
 extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
-prompt_models = ['flant5','llama','qwen','eurollm']
+prompt_models = ['llama','qwen','eurollm']
 
 def read_file(name):
 	'''
@@ -29,16 +30,58 @@ def read_file(name):
 	lines = file_r.read().splitlines()
 	file_r.close()
 	return lines
+
+def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
+	'''
+	Performs the simulation of the IMT task for one sentence
+
+	Parameters:
+		model (transformers.model): Model to use
+		model_name (str): Codename of the model
+		restrictor (restriction.Restriction): Object to restrict the output
+		encoded_src (dict): Encoded source sentence
+		c_trg (str): Target sentence
+		verbose (bool): Whether to show the output or not
+	'''
+	ite, tiempo_total, iteraciones, word_strokes, mouse_actions = 0, 0, 0, 0, 0
+	ended = False
+	MAX_TOKENS = 512
+	while not ended:
+		# Generate the translation
+		remove_sos = model_name in prompt_models
+		restrictor.prepare(remove_sos=remove_sos,remove_eos=not remove_sos)
+
+		ini = time()
+		generated_tokens = model.generate(**encoded_src,
+						max_new_tokens=MAX_TOKENS,
+						prefix_allowed_tokens_fn=restrictor.restrict).tolist()[0]
+		output = restrictor.decode(generated_tokens)
+		if verbose:
+			print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
+		#if args.model_name in prompt_models:
+		# 	output = output[len(query):]
+		tiempo_total += time() - ini
+		iteraciones += 1
+		if len(generated_tokens) >= MAX_TOKENS:
+			MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
+		elif len(generated_tokens) > 3/4 * MAX_TOKENS:
+			MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
+
+		actions, corrections, ended = restrictor.check_segments(c_trg, output, verbose=verbose)
+		word_strokes += corrections
+		mouse_actions += actions
+		if verbose:
+			print('Mouse actions:',actions)
+			print('Word strokes:',corrections)
+		ite += 1
+	return word_strokes, mouse_actions, tiempo_total, iteraciones
 	
 def translate(args):
-	'''
-	Performs the simulation of the interactive sesion and obtains the WSR and MAR metrics.
-	'''
 	#try:
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	src_lines, trg_lines = R.load_data(args.folder, args.partition, args.model_name, args.source, args.target)
-	if args.model_name in prompt_models:
+	src_lines, trg_lines = R.load_data(args.folder, args.partition, args.source, args.target)
+	if args.model_name in prompt_models or 't5' in args.model_name:
 		prompt = f'Translate the sentence from {extend[args.source]} to {extend[args.target]} without further explanation.'+ '\nSentence: {sent}\nTranslation: '
 	else:
 		prompt = '{sent}'
@@ -59,15 +102,12 @@ def translate(args):
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
 	model, tokenizer = R.load_model(model_path, args, device)
-	#|=========================================================
-	#| PREPARE THE RESTRICTOR
 	VOCAB = [*range(len(tokenizer))]
 	tiempo_total = 0
 	iteraciones = 0
 	
 	#|=========================================================
 	#| GET IN THE RIGHT PLACE
-
 	total_words = 0
 	total_chars = 0
 	for line in trg_lines[:args.initial]:
@@ -78,8 +118,6 @@ def translate(args):
 	#|=========================================================s	
 	Restrictor = R.SegmentRestrictor if args.segment_based else R.PrefixRestrictor
 	for i in range(args.initial, len(src_lines)):
-		#if i<1280-1:
-		#	continue
 		# Save the SRC and TRG sentences
 		c_src = src_lines[i]
 		c_trg = ' '.join(R.tokenize(trg_lines[i],wordTokenizer=wordTokenizer))
@@ -92,53 +130,23 @@ def translate(args):
 		# Convert them to ids
 		query = prompt.format(sent=c_src)
 		encoded_src = tokenizer(query, return_tensors="pt").to(device)
-		encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
-		if len(encoded_trg) > 512:
-			continue
+		# encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
+		# if len(encoded_trg) > 512:
+		# 	continue
 
-		# Prints
 		if args.verbose:
-			# if args.model_name in prompt_models:
-			# 	corrected_src = c_src[len(query):]
 			print("Sentece {0}:\n\tSOURCE: {1}\n\tTARGET: {2}".format(i+1,query,c_trg))
 
-		ite = 0
-		MAX_TOKENS = 400
-		start_char = 'Ġ' if args.model_name == 'llama' else '▁'
-		restrictor = Restrictor(VOCAB,tokenizer,query,start_char)#,len(R.tokenize(c_trg,wordTokenizer=wordTokenizer)))
-		ended = False
 		iteraciones += 1
-		while not ended:
-			# Generate the translation
-			remove_sos = args.model_name in prompt_models
-			restrictor.prepare(remove_sos=remove_sos,remove_eos=not remove_sos)
-
-			ini = time()
-			generated_tokens = model.generate(**encoded_src,
-							max_new_tokens=MAX_TOKENS,
-							prefix_allowed_tokens_fn=restrictor.restrict).tolist()[0]
-			output = restrictor.decode(generated_tokens)
-			#if args.model_name in prompt_models:
-			# 	output = output[len(query):]
-			tiempo_total += time() - ini
-			iteraciones += 1
-			if len(generated_tokens) >= MAX_TOKENS:
-				MAX_TOKENS = min(512, int(MAX_TOKENS*(3/2)))
-			elif len(generated_tokens) > 3/4 * MAX_TOKENS:
-				MAX_TOKENS = min(512, int(MAX_TOKENS*(5/4)))
-
-			actions, corrections, ended = restrictor.check_segments(c_trg, output, verbose=args.verbose)
-			word_strokes += corrections
-			mouse_actions += actions
-			if args.verbose:
-				print('Mouse actions:',actions)
-				print('Word strokes:',corrections)
-				print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
-			ite += 1
+		start_char = 'Ġ' if args.model_name == 'llama' else '▁'
+		restrictor = Restrictor(VOCAB,tokenizer,query,start_char,target_len=n_words)
+		word_strokes, mouse_actions, tiempo, iters = imt_simulation(model, args.model_name, restrictor, encoded_src, c_trg, args.verbose)
 		total_words += n_words
 		total_chars += n_chars
 		total_ws += word_strokes
 		total_ma += mouse_actions
+		tiempo_total += tiempo
+		iteraciones += iters
 
 		output_txt = "Line {0} T_WSR: {1:.4f} T_MAR: {2:.4f} TIME: {3:4f}".format(i, total_ws/total_words, total_ma/total_chars, tiempo_total)
 		if args.verbose:
