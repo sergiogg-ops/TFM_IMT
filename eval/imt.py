@@ -8,28 +8,14 @@ import argparse
 from time import time
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
+from model import load_model, load_data, check_language_code, PROMPTERS
 import restriction as R
+
 
 MAX_TOKENS = 512 # Maximum number of tokens to generate
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
 extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
-prompt_models = ['llama','qwen','eurollm']
-
-def read_file(name):
-	'''
-	Opens a file and split the lines into a list
-
-	Parameters:
-		name (str): Name of the file to open
-	
-	Returns:
-		list: List with the lines of the file
-	'''
-	file_r = open(name, 'r')
-	lines = file_r.read().splitlines()
-	file_r.close()
-	return lines
 
 def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
 	'''
@@ -48,7 +34,7 @@ def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
 	MAX_TOKENS = 512
 	while not ended:
 		# Generate the translation
-		remove_sos = model_name in prompt_models
+		remove_sos = model_name in PROMPTERS
 		restrictor.prepare(remove_sos=remove_sos,remove_eos=not remove_sos)
 
 		ini = time()
@@ -58,7 +44,7 @@ def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
 		output = restrictor.decode(generated_tokens)
 		if verbose:
 			print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
-		#if args.model_name in prompt_models:
+		#if args.model_name in PROMPTERS:
 		# 	output = output[len(query):]
 		tiempo_total += time() - ini
 		iteraciones += 1
@@ -80,8 +66,8 @@ def translate(args):
 	#try:
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	src_lines, trg_lines = R.load_data(args.folder, args.partition, args.source, args.target)
-	if args.model_name in prompt_models or 't5' in args.model_name:
+	src_lines, trg_lines = load_data(args.folder, args.source, args.target, args.partition)
+	if args.model_name in PROMPTERS or 't5' in args.model_name:
 		prompt = f'Translate the sentence from {extend[args.source]} to {extend[args.target]} without further explanation.'+ '\nSentence: {sent}\nTranslation: '
 	else:
 		prompt = '{sent}'
@@ -101,7 +87,7 @@ def translate(args):
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
-	model, tokenizer = R.load_model(model_path, args, device)
+	model, tokenizer = load_model(model_path, args, device)
 	VOCAB = [*range(len(tokenizer))]
 	tiempo_total = 0
 	iteraciones = 0
@@ -161,10 +147,10 @@ def translate(args):
 
 def check_parameters(args):
 	# Check Source Language
-	args.source_code = R.check_language_code(args.source) if args.model_name == 'mbart' else args.source
+	args.source_code = check_language_code(args.source) if args.model_name == 'mbart' else args.source
 
 	# Check Target Language
-	args.target_code = R.check_language_code(args.target) if args.model_name == 'mbart' else args.target
+	args.target_code = check_language_code(args.target) if args.model_name == 'mbart' else args.target
 
 	# Check the model that is going to load
 	if args.model == None:

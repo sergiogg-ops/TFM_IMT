@@ -2,7 +2,7 @@ import argparse
 
 import torch
 import evaluate
-from restriction import load_model, check_language_code, load_data
+from model import load_model, check_language_code, load_data, get_prompter, PROMPTERS
 from transformers import TranslationPipeline, Text2TextGenerationPipeline
 from tqdm import tqdm
 
@@ -17,7 +17,9 @@ def translate(args):
 	print('Cargando modelo...')
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	src_lines, trg_lines = load_data(args.folder, args.source, args.model_name, args.target, args.partition)
+	src_lines, trg_lines = load_data(args.folder, args.source, args.target, args.partition)
+	prompter = get_prompter(args.model_name, args.source, args.target)
+	src_lines = [prompter.src_format(l) for l in src_lines]
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
@@ -33,7 +35,7 @@ def translate(args):
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
 	print('Traduciendo...')
-	if args.model_name in ['llama','qwen']:
+	if args.model_name in PROMPTERS:
 		outputs = []
 		# Process inputs in batches
 		for i in tqdm(range(0, len(src_lines), args.batch_size)):
@@ -46,7 +48,7 @@ def translate(args):
 			outputs.extend(decoded_outputs)
 		with open('output.txt','w') as f:
 			f.write('\n-------------------------------------\n'.join(outputs))
-		hypothesis = [o.replace(i,'') for i,o in zip(src_lines,outputs)]
+		hypothesis = [prompter.clean(o) for o in outputs]
 		with open('hyp.txt','w') as f:
 			f.write('\n'.join(hypothesis))
 	else:
