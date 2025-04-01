@@ -1,10 +1,4 @@
-from transformers import (MBartForConditionalGeneration, MBart50TokenizerFast,
-						M2M100ForConditionalGeneration, M2M100Tokenizer,
-						AutoTokenizer, AutoModelForSeq2SeqLM,
-						AutoModelForCausalLM, AutoModelForImageTextToText,
-						AutoProcessor, AutoModelForImageTextToText)
-from peft import LoraConfig, get_peft_model
-from eval.model import *
+from model import *
 import lightning as L
 from evaluate import load
 import evaluate
@@ -72,90 +66,40 @@ class TranslationModel(L.LightningModule):
 		return {'optimizer': opt,
                 'lr_scheduler': torch.optim.lr_scheduler.LinearLR(opt,start_factor=1, end_factor=1/3, total_iters=10000)}
 
-
-def load_model(model_name):
+def get_url(model_name):
 	'''
-	Downloads the model from the huggingface repository
-
+	Returns the url of the model to download
 	Parameters:
 		model_name (str): Name of the model to download
-	
+
 	Returns:
-		torch.nn.Module: Model to train
+		str: URL of the model
 	'''
 	if model_name == 'mbart':
-		_mdl = 	MBartForConditionalGeneration.from_pretrained('facebook/mbart-large-50-many-to-many-mmt')
+		return 'facebook/mbart-large-50-many-to-many-mmt'
 	elif model_name == 'm2m':
-		_mdl = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M")
+		return "facebook/m2m100_418M"
 	elif model_name == 'flant5':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+		return "google/flan-t5-base"
 	elif model_name == 'nllb':
-		_mdl = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+		return "facebook/nllb-200-distilled-600M"
 	elif model_name == 'llama':
-		_mdl = AutoModelForCausalLM.from_pretrained(
-			"meta-llama/Llama-3.2-1B-Instruct",
-			token='hf_token'
-		)
+		return "meta-llama/Llama-3.2-1B-Instruct"
 	elif model_name == 'qwen':
-		_mdl = AutoModelForImageTextToText.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+		return "Qwen/Qwen2.5-VL-7B-Instruct"
 	elif model_name == 'eurollm':
-		_mdl = AutoModelForCausalLM.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
+		return "utter-project/EuroLLM-1.7B-Instruct"
 	elif model_name == 'gemma':
-		_mdl = AutoModelForImageTextToText.from_pretrained("google/gemma-3-4b-it",token='hf_token')
+		return "google/gemma-3-4b-it"
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)
-	return _mdl
-
-
-def load_tokenizer(args):
-	'''
-	Dowloads the tokenizer from the huggingface repository
-
-	Parameters:
-		args (Namespace): Parameters of the execution
-
-	Returns:
-		Tokenizer: Tokenizer to use
-	'''
-	if args.model_name == 'mbart':
-		_tok = MBart50TokenizerFast.from_pretrained('facebook/mbart-large-50-many-to-many-mmt')
-	elif args.model_name == 'm2m':
-		_tok = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
-	elif args.model_name == 'flant5':
-		_tok = AutoTokenizer.from_pretrained("google/flan-t5-base")
-	elif args.model_name == 'nllb':
-		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
-	elif args.model_name == 'llama':
-		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct",
-									   token='hf_token')
-	elif args.model_name == 'qwen':
-		_tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
-	elif args.model_name == 'eurollm':
-		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
-	elif args.model_name == 'gemma':
-		_tok = AutoProcessor.from_pretrained("google/gemma-3-4b-it",token='hf_token')
-	else:
-		print('Model not implemented: {0}'.format(args.model_name))
-		sys.exit(1)
-	_tok.src_lang = args.source_code
-	_tok.tgt_lang = args.target_code
-	return _tok
 
 def load_datasets(args):
 	'''
 	Loads the training and development datasets
 	'''
-	extend = {'en':'English','ca':'Catalan','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili'}
-	prompt = f'Translate the sentence from {extend[args.source]} to {extend[args.target]} without further explanation.'
-	if args.model_name == 'flant5' or args.model_name == 'llama':
-		prompter = Prompter(prompt)
-	elif args.model_name == 'eurollm':
-		prompter = EuroPrompter(prompt)
-	elif args.model_name == 'gemma':
-		prompter = GemmaPrompter(prompt)
-	else:
-		prompter = Prompter('')
+	prompter = get_prompter(args.model_name, args.source, args.target)
 	
 	shards = [	f"{args.folder}train.{args.source}", 
 				f"{args.folder}train.{args.target}"
@@ -195,21 +139,10 @@ def main():
 	print(args)
 
 	METRIC = load("sacrebleu")
-	MODEL = load_model(args.model_name)
-	TOKENIZER = load_tokenizer(args)
-	if TOKENIZER.pad_token is None:
-		TOKENIZER.pad_token = TOKENIZER.eos_token
-		TOKENIZER.padding_side = 'left'
-		MODEL.config.pad_token_id = TOKENIZER.pad_token_id
+	MODEL, TOKENIZER = load_model(get_url(args.model_name), args, 'cuda')
 
 	if args.lora:
-		lora_config = LoraConfig(
-            r=16,
-            lora_alpha=16,
-            lora_dropout=0.1,
-            target_modules='all-linear'
-    	)
-		MODEL = get_peft_model(MODEL, lora_config)
+		MODEL = apply_lora(MODEL)
 
 	num_workers = int(os.cpu_count() * 0.75)
 	train_dataset, dev_dataset = load_datasets(args)
