@@ -15,17 +15,10 @@ if __name__ == '__main__':
     args = read_parameters()
     args = check_parameters(args)
 
-    MODEL = load_model(args.model_name)
-    TOKENIZER = load_tokenizer(args)
+    MODEL, TOKENIZER = load_model(get_url(args.model_name), args)
 
     if args.lora:
-        lora_config = LoraConfig(
-            r=16,
-            lora_alpha=16,
-            lora_dropout=0.1,
-            target_modules='all-linear'
-        )
-        MODEL = get_peft_model(MODEL, lora_config)
+        MODEL = apply_lora(MODEL)
 
     translator = TranslationModel.load_from_checkpoint(args.path, model=MODEL, tokenizer=TOKENIZER)
 

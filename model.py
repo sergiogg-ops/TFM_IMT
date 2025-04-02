@@ -1,5 +1,6 @@
 import sys
 from torch.utils.data import Dataset
+from peft import LoraConfig, get_peft_model
 from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           M2M100ForConditionalGeneration, M2M100Tokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
@@ -141,6 +142,15 @@ def load_model(model_path, args, _dev='cpu'):
 		_tok.padding_side = 'left'
 		_mdl.config.pad_token_id = _mdl.config.eos_token_id
 	return _mdl, _tok
+
+def apply_lora(model):
+	lora_config = LoraConfig(
+		r=16,
+		lora_alpha=16,
+		lora_dropout=0.1,
+		target_modules='all-linear'
+	)
+	return get_peft_model(model, lora_config)
 
 def load_data(folder,source, target, partition):
 	with open(f'{folder}/{partition}.{source}','r') as src_file:
