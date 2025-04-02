@@ -8,7 +8,7 @@ import argparse
 from time import time
 import torch
 from nltk.tokenize.treebank import TreebankWordTokenizer
-from model import load_model, load_data, check_language_code, PROMPTERS
+import model as M
 import restriction as R
 
 
@@ -34,7 +34,7 @@ def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
 	MAX_TOKENS = 512
 	while not ended:
 		# Generate the translation
-		remove_sos = model_name in PROMPTERS
+		remove_sos = model_name in M.PROMPTERS
 		restrictor.prepare(remove_sos=remove_sos,remove_eos=not remove_sos)
 
 		ini = time()
@@ -44,7 +44,7 @@ def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
 		output = restrictor.decode(generated_tokens)
 		if verbose:
 			print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
-		#if args.model_name in PROMPTERS:
+		#if args.model_name in M.PROMPTERS:
 		# 	output = output[len(query):]
 		tiempo_total += time() - ini
 		iteraciones += 1
@@ -66,8 +66,8 @@ def translate(args):
 	#try:
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	src_lines, trg_lines = load_data(args.folder, args.source, args.target, args.partition)
-	if args.model_name in PROMPTERS or 't5' in args.model_name:
+	src_lines, trg_lines = M.load_data(args.folder, args.source, args.target, args.partition)
+	if args.model_name in M.PROMPTERS or 't5' in args.model_name:
 		prompt = f'Translate the sentence from {extend[args.source]} to {extend[args.target]} without further explanation.'+ '\nSentence: {sent}\nTranslation: '
 	else:
 		prompt = '{sent}'
@@ -87,7 +87,7 @@ def translate(args):
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
-	model, tokenizer = load_model(model_path, args, device)
+	model, tokenizer = M.load_model(model_path, args, device)
 	VOCAB = [*range(len(tokenizer))]
 	tiempo_total = 0
 	iteraciones = 0
@@ -147,26 +147,22 @@ def translate(args):
 
 def check_parameters(args):
 	# Check Source Language
-	args.source_code = check_language_code(args.source) if args.model_name == 'mbart' else args.source
+	args.source_code = M.check_language_code(args.source) if args.model_name == 'mbart' else args.source
 
 	# Check Target Language
-	args.target_code = check_language_code(args.target) if args.model_name == 'mbart' else args.target
-
-	# Check the model that is going to load
-	if args.model == None:
-		args.model = "./mbart-large-50-many-to-many-mmt"
+	args.target_code = M.check_language_code(args.target) if args.model_name == 'mbart' else args.target
 
 	return args
 
 def read_parameters():
-	parser = argparse.ArgumentParser(description='Simulates a user in an IMT task and evaluate the WSR and MAR metrics')
+	parser = argparse.ArgumentParser(description='Simulates a user in an IMT task and evaluates the WSR and MAR metrics')
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument("-model", "--model", required=False, help="Model to load")
+	parser.add_argument("-model", "--model", required=True, help="Model to load")
 	parser.add_argument("-out", "--output", required=False, help="Output file")
 	parser.add_argument("-seg","--segment_based",action='store_true', default=False,help='Whether to use segment-based approach or not. Default to prefix-based.')
-	parser.add_argument('-model_name','--model_name', required=False, default='mbart', choices=['mbart','m2m','flant5','nllb','bloom','llama','qwen'], help='Model name')
+	parser.add_argument('-model_name','--model_name', required=True, default='mbart', choices=M.NAMES, help='Model name')
 	parser.add_argument('-p','--partition',required=False, default='test', choices=['dev','test'], help='Partition to evaluate, default to test')
 	parser.add_argument("-ini","--initial", required=False, default=0, type=int, help="Initial line")
 	parser.add_argument("-fin","--final",required=False, default=-1,type=int,help="Final Line")

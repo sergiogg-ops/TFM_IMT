@@ -2,7 +2,7 @@ import argparse
 
 import torch
 import evaluate
-from model import load_model, check_language_code, load_data, get_prompter, PROMPTERS
+import model as M
 from transformers import TranslationPipeline, Text2TextGenerationPipeline
 from tqdm import tqdm
 
@@ -17,13 +17,13 @@ def translate(args):
 	print('Cargando modelo...')
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
-	src_lines, trg_lines = load_data(args.folder, args.source, args.target, args.partition)
-	prompter = get_prompter(args.model_name, args.source, args.target)
+	src_lines, trg_lines = M.load_data(args.folder, args.source, args.target, args.partition)
+	prompter = M.get_prompter(args.model_name, args.source, args.target)
 	src_lines = [prompter.src_format(l) for l in src_lines]
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
-	model, tokenizer = load_model(model_path, args, device)
+	model, tokenizer = M.load_model(model_path, args, device)
 
 	if tokenizer.pad_token is None:
 		tokenizer.pad_token = tokenizer.eos_token
@@ -35,7 +35,7 @@ def translate(args):
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
 	ter_metric = evaluate.load('ter',trust_remote_code=True)
 	print('Traduciendo...')
-	if args.model_name in PROMPTERS:
+	if args.model_name in M.PROMPTERS:
 		outputs = []
 		# Process inputs in batches
 		for i in tqdm(range(0, len(src_lines), args.batch_size)):
@@ -74,25 +74,21 @@ def translate(args):
 
 def check_parameters(args):
 	# Check Source Language
-	args.source_code = check_language_code(args.source) if args.model_name == 'mbart' else args.source
+	args.source_code = M.check_language_code(args.source) if args.model_name == 'mbart' else args.source
 
 	# Check Target Language
-	args.target_code = check_language_code(args.target) if args.model_name == 'mbart' else args.target
-
-	# Check the model that is going to load
-	if args.model == None:
-		args.model = "./mbart-large-50-many-to-many-mmt"
+	args.target_code = M.check_language_code(args.target) if args.model_name == 'mbart' else args.target
 
 	return args
 
 def read_parameters():
-	parser = argparse.ArgumentParser(description='Translate and evaluate the BLEU and TER metrics')
+	parser = argparse.ArgumentParser(description='Translate and evaluate the BLEU and TER metrics. The metrics for each sentence are saved in a file called as the model name')
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where the dataset is")
 	parser.add_argument("-p","--partition", required=False, default="test", choices=["dev","test"], help="Partition to load")
-	parser.add_argument("-model", "--model", required=False, help="Model to load")
-	parser.add_argument("-model_name", "--model_name", required=False, choices=['mbart','m2m','flant5','nllb','llama','qwen','eurollm'], help="Model to load")
+	parser.add_argument("-model", "--model", required=True, help="Model to load")
+	parser.add_argument("-model_name", "--model_name", required=True, choices=M.NAMES, help="Model to load")
 	parser.add_argument('-b','--batch_size',required=False,default=64,type=int,help='Batch size for the inference')
 
 	args = parser.parse_args()

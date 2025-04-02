@@ -9,6 +9,7 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
 
 PROMPTERS = ['llama','qwen','eurollm','gemma']
 PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.\nSentence: {sent}\nTranslation: '
+NAMES = ['mbart','m2m','flant5','nllb','llama','qwen','eurollm','gemma']
 
 class Prompter:
 	def __init__(self, instruction = ''):

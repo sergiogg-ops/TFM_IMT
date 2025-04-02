@@ -122,7 +122,7 @@ def read_parameters():
 	parser.add_argument("-src", "--source", required=True, help="Source Language")
 	parser.add_argument("-trg", "--target", required=True, help="Target Language")
 	parser.add_argument("-dir", "--folder", required=True, help="Folder where is the dataset")
-	parser.add_argument('-model','--model_name',default='mbart',choices=['mbart','m2m','flant5','nllb','llama','qwen','eurollm'],help='Model to train')
+	parser.add_argument('-model','--model_name',default='mbart',choices=NAMES,help='Model to train')
 	parser.add_argument('-lora','--lora',action='store_true',help='Whether to use Low-Rank Adaptation or not')
 	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
 	parser.add_argument('-bs','--batch_size',type=int,default=32,help='Batch size')
