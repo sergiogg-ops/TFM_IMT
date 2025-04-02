@@ -30,3 +30,15 @@ Here are the models that can be used directly with this repository, their scient
 | [Llama 3.2](https://arxiv.org/abs/2407.21783) | meta-llama/Llama-3.2-1B-Instruct |
 | [EuroLLM](https://arxiv.org/abs/2409.16235) | utter-project/EuroLLM-1.7B-Instruct |
 | [Gemma 3](https://arxiv.org/abs/2503.19786) | google/gemma-3-4b-it |
+
+# Citation
+If you use this repository, please cite:
+```
+@inproceedings{gomez2024interactive,
+  title={Interactive Machine Translation with Large Language Models in Low Resources Languages},
+  author={G{\'o}mez, Sergio and Domingo, Miguel and Casacuberta, Francisco},
+  booktitle={Proc. IberSPEECH 2024},
+  pages={66--70},
+  year={2024}
+}
+```
