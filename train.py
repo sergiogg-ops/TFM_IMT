@@ -104,12 +104,12 @@ def load_datasets(args):
 	shards = [	f"{args.folder}train.{args.source}", 
 				f"{args.folder}train.{args.target}"
 				]
-	training = MosesCorpus(shards[0],shards[1],TOKENIZER,prompter = prompter)
+	training = MosesCorpus(shards[0],shards[1], prompter = prompter)
 
 	shards = [	f"{args.folder}dev.{args.source}",
 				f"{args.folder}dev.{args.target}"
 				]	
-	development = MosesCorpus(shards[0],shards[1],TOKENIZER, prompter = prompter)
+	development = MosesCorpus(shards[0],shards[1], prompter = prompter)
 	return training, development
 
 def check_parameters(args):
