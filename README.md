@@ -29,7 +29,7 @@ Here are the models that can be used directly with this repository, their scient
 | [NLLB](https://arxiv.org/abs/2207.04672) | facebook/nllb-200-distilled-600M |
 | [Llama 3.2](https://arxiv.org/abs/2407.21783) | meta-llama/Llama-3.2-1B-Instruct |
 | [EuroLLM](https://arxiv.org/abs/2409.16235) | utter-project/EuroLLM-1.7B-Instruct |
-| [Gemma 3](https://arxiv.org/abs/2503.19786) | google/gemma-3-4b-it |
+| [Gemma 3](https://arxiv.org/abs/2503.19786) | google/gemma-3-1b-it |
 
 # Citation
 If you use this repository, please cite:

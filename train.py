@@ -90,7 +90,7 @@ def get_url(model_name):
 	elif model_name == 'eurollm':
 		return "utter-project/EuroLLM-1.7B-Instruct"
 	elif model_name == 'gemma':
-		return "google/gemma-3-4b-it"
+		return "google/gemma-3-1b-it"
 	else:
 		print('Model not implemented: {0}'.format(model_name))
 		sys.exit(1)

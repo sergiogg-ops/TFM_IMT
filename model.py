@@ -119,7 +119,7 @@ def load_model(model_path, args, _dev='cpu'):
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
 											src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'llama':
-		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
+		_mdl = AutoModelForCausalLM.from_pretrained(model_path, token='hf_token', **kwargs)
 		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct",token='hf_token', padding_side='left')
 	elif args.model_name == 'qwen':
 		_mdl = AutoModelForImageTextToText.from_pretrained(model_path, **kwargs)
@@ -128,8 +128,8 @@ def load_model(model_path, args, _dev='cpu'):
 		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
 	elif args.model_name == 'gemma':
-		_mdl = AutoModelForImageTextToText.from_pretrained(model_path, **kwargs)
-		_tok = AutoProcessor.from_pretrained("google/gemma-3-4b-it",token='hf_token')
+		_mdl = AutoModelForCausalLM.from_pretrained(model_path, token='hf_token', **kwargs)
+		_tok = AutoTokenizer.from_pretrained("google/gemma-3-1b-it", token='hf_token')
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
