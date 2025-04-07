@@ -20,16 +20,12 @@ def translate(args):
 	src_lines, trg_lines = M.load_data(args.folder, args.source, args.target, args.partition)
 	prompter = M.get_prompter(args.model_name, args.source, args.target)
 	src_lines = [prompter.src_format(l) for l in src_lines]
+	# src_lines = src_lines[:10]
+	# trg_lines = trg_lines[:10]
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
 	model, tokenizer = M.load_model(model_path, args, device)
-
-	if tokenizer.pad_token is None:
-		tokenizer.pad_token = tokenizer.eos_token
-		tokenizer.padding_side = 'left'
-		model.config.pad_token_id = tokenizer.pad_token_id
-		model.pad_token = tokenizer.pad_token
 	#|========================================================
 	MAX_TOKENS = 400
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
@@ -43,8 +39,8 @@ def translate(args):
 			batch = src_lines[i:i + args.batch_size]
 			input_ids = tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to(device)
 			with torch.no_grad():
-				output = model.generate(**input_ids, max_new_tokens=128, pad_token_id=tokenizer.pad_token_id)
-			decoded_outputs = tokenizer.batch_decode(output, skip_special_tokens=True)
+				output = model.generate(**input_ids, max_new_tokens=MAX_TOKENS, pad_token_id=tokenizer.pad_token_id)
+			decoded_outputs = tokenizer.batch_decode(output, skip_special_tokens=False)
 			outputs.extend(decoded_outputs)
 		with open('output.txt','w') as f:
 			f.write('\n-------------------------------------\n'.join(outputs))
@@ -56,11 +52,7 @@ def translate(args):
 		hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
 		hypothesis = [t['translation_text'] for t in hypothesis]
 
-	# for orig, hyp in zip(trg_lines, hypothesis):
-	# 	print(orig)
-	# 	print('+')
-	# 	print(hyp)
-	# 	print('------------------------------')
+	#print(hypothesis)
 	print('Evaluando metricas...')
 	bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]
 	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]

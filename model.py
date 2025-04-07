@@ -30,7 +30,8 @@ class LlamaPrompter(Prompter):
 	def tgt_format(self, src, tgt):
 		return self.src_format(src) + tgt
 	def clean(self, text):
-		return text.split('\nTranslation:')[-1].strip()
+		text = text.split('Translation:')[-1].strip()
+		return text[:text.find('<|eot_id|>')].strip()
 	
 class EuroPrompter(Prompter):
 	def src_format(self, text):
@@ -38,7 +39,8 @@ class EuroPrompter(Prompter):
 	def tgt_format(self, src, tgt):
 		return self.src_format(src) + tgt + '<|im_end|>'
 	def clean(self, text):
-		return text.split('<|im_start|>assistant')[-1].strip()
+		text = text.split('<|im_start|> assistant')[-1].strip()
+		return text[:text.find('<|im_end|>')].strip()
 
 class GemmaPrompter(Prompter):
 	def src_format(self, text):
@@ -46,7 +48,8 @@ class GemmaPrompter(Prompter):
 	def tgt_format(self, src, tgt):
 		return self.src_format(src) + tgt
 	def clean(self, text):
-		return text.split('<start_of_turn>model Translation:')[-1].strip()
+		text = text.split('<start_of_turn>model Translation:')[-1].strip()
+		return text[:text.find('<end_of_turn>')].strip()
 
 class MosesCorpus(Dataset):
 	'''
@@ -164,7 +167,7 @@ def get_prompter(model_name, source, target):
 	extend = {'en':'English','ca':'Catalan','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili'}
 	prompt = f'Translate the sentence from {extend[source]} to {extend[target]} without further explanation.'
 	if model_name == 'flant5' or model_name == 'llama':
-		prompter = Prompter(prompt)
+		prompter = LlamaPrompter(prompt)
 	elif model_name == 'eurollm':
 		prompter = EuroPrompter(prompt)
 	elif model_name == 'gemma':
