@@ -26,11 +26,11 @@ class Prompter:
 
 class LlamaPrompter(Prompter):
 	def src_format(self, text):
-		return f'{self.instr}\nSentence: {text}\nTranslation:'
+		return f'<|begin_of_text|>\n<|start_header_id|>system<|end_header_id|>{self.instr}<|eot_id|><|start_header_id|>user<|end_header_id|>{text}<|eot_id|>\n<|start_header_id|>assistant<|end_header_id|>Translation:'
 	def tgt_format(self, src, tgt):
-		return self.src_format(src) + tgt
+		return self.src_format(src) + tgt + '<|eot_id|>'
 	def clean(self, text):
-		text = text.split('Translation:')[-1].strip()
+		text = text.split('<|start_header_id|>assistant<|end_header_id|>Translation:')[-1].strip()
 		return text[:text.find('<|eot_id|>')].strip()
 	
 class EuroPrompter(Prompter):
