@@ -52,10 +52,10 @@ class TranslationModel(L.LightningModule):
 	
 	def validation_step(self, batch, batch_idx):
 		inputs = self.tokenizer(batch['source'], padding=True, text_target=batch['target'], return_tensors='pt').to('cuda')
-		# outputs = self.model.generate(**inputs, max_new_tokens=128)
-		# hyp = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-		# ref = batch['target']
-		# bleu = self.metric.compute(predictions=hyp, references=ref)
+		# # outputs = self.model.generate(**inputs, max_new_tokens=128)
+		# # hyp = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+		# # ref = batch['target']
+		# # bleu = self.metric.compute(predictions=hyp, references=ref)
 		loss = self.forward(inputs).loss
 		metrics = {'val_loss': loss}
 		self.log_dict(metrics,batch_size=1)
@@ -152,12 +152,12 @@ def main():
 	fp16 = not 't5' in args.model_name
 	
 	translator = TranslationModel(MODEL, TOKENIZER, lr=args.learning_rate)
-	callbacks = [L.pytorch.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=2, min_delta=0.1),
-                L.pytorch.callbacks.ModelCheckpoint(monitor='val_loss', mode='min', save_top_k=3, save_weights_only=True,
+	callbacks = [L.pytorch.callbacks.EarlyStopping(monitor='val_bleu', mode='max', patience=3, min_delta=1e-5),
+                L.pytorch.callbacks.ModelCheckpoint(monitor='val_bleu', mode='max', save_top_k=3, save_weights_only=True,
 								  dirpath=f'models/{args.model_name}_{args.source+args.target}')]
 	accumulate = 32 // args.batch_size if args.batch_size < 32 else 1
 	trainer = L.Trainer(max_epochs=args.epochs,
-					 #precision=16 if fp16 else 32,
+					 precision=16 if fp16 else 32,
 					 val_check_interval=0.2,
 					 accumulate_grad_batches=accumulate,
 					 default_root_dir=f'models/{args.model_name}_{args.source+args.target}',
