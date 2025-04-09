@@ -137,6 +137,7 @@ ploter.ipynb
 launcher.*
 models/*
 hplt/*
+europarl-inmt/*
 nohup.*
 trace*
 *.sh
