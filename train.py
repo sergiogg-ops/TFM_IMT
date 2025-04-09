@@ -152,8 +152,8 @@ def main():
 	fp16 = not 't5' in args.model_name
 	
 	translator = TranslationModel(MODEL, TOKENIZER, lr=args.learning_rate)
-	callbacks = [L.pytorch.callbacks.EarlyStopping(monitor='val_bleu', mode='max', patience=3, min_delta=1e-5),
-                L.pytorch.callbacks.ModelCheckpoint(monitor='val_bleu', mode='max', save_top_k=3, save_weights_only=True,
+	callbacks = [L.pytorch.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=2, min_delta=0.1),
+                L.pytorch.callbacks.ModelCheckpoint(monitor='val_loss', mode='min', save_top_k=3, save_weights_only=True,
 								  dirpath=f'models/{args.model_name}_{args.source+args.target}')]
 	accumulate = 32 // args.batch_size if args.batch_size < 32 else 1
 	trainer = L.Trainer(max_epochs=args.epochs,
