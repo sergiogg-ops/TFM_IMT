@@ -8,7 +8,7 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
 						  AutoProcessor, AutoModelForImageTextToText)
 
 PROMPTERS = ['llama','qwen','eurollm','gemma']
-PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.\nSentence: {sent}\nTranslation: '
+PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.'
 NAMES = ['mbart','m2m','flant5','nllb','llama','qwen','eurollm','gemma']
 
 class Prompter:
@@ -16,12 +16,13 @@ class Prompter:
 		self. instr = instruction
 
 	def src_format(self, text):
-		return text
+		return self.instr + '\n' + text
 	
 	def tgt_format(self, src, tgt):
-		return tgt
+		return self.src_format(src) +'\nTranslation: ' + tgt
 	
 	def clean(self, text):
+		text = text.split('Translation:')[-1].strip()
 		return text
 
 class LlamaPrompter(Prompter):
@@ -35,11 +36,11 @@ class LlamaPrompter(Prompter):
 	
 class EuroPrompter(Prompter):
 	def src_format(self, text):
-		return f'<|im_start|>system {self.instr}<|im_end|><|im_start|>user{text}<|im_end|><|im_start|>assistant'
+		return f'<|im_start|>system {self.instr}<|im_end|><|im_start|>user{text}<|im_end|><|im_start|>assistant Translation:'
 	def tgt_format(self, src, tgt):
 		return self.src_format(src) + tgt + '<|im_end|>'
 	def clean(self, text):
-		text = text.split('<|im_start|> assistant')[-1].strip()
+		text = text.split('<|im_start|> assistant Translation:')[-1].strip()
 		return text[:text.find('<|im_end|>')].strip()
 
 class GemmaPrompter(Prompter):
@@ -139,7 +140,6 @@ def load_model(model_path, args, _dev='cpu'):
 	# if not args.quantize:
 	# 	_mdl.to(_dev)
 	_mdl = _mdl.to(_dev)
-	_mdl.eval()
 
 	if _tok.pad_token is None:
 		_tok.pad_token = _tok.eos_token
@@ -166,14 +166,15 @@ def load_data(folder,source, target, partition):
 def get_prompter(model_name, source, target):
 	extend = {'en':'English','ca':'Catalan','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili'}
 	prompt = f'Translate the sentence from {extend[source]} to {extend[target]} without further explanation.'
-	if model_name == 'flant5' or model_name == 'llama':
-		prompter = LlamaPrompter(prompt)
-	elif model_name == 'eurollm':
-		prompter = EuroPrompter(prompt)
-	elif model_name == 'gemma':
-		prompter = GemmaPrompter(prompt)
-	else:
-		prompter = Prompter('')
+	# if model_name == 'flant5' or model_name == 'llama':
+	# 	prompter = LlamaPrompter(prompt)
+	# elif model_name == 'eurollm':
+	# 	prompter = EuroPrompter(prompt)
+	# elif model_name == 'gemma':
+	# 	prompter = GemmaPrompter(prompt)
+	# else:
+	# 	prompter = Prompter('')
+	prompter = Prompter(prompt)
 	return prompter
 
 def check_language_code(code):

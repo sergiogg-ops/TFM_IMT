@@ -26,6 +26,7 @@ def translate(args):
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
 	model, tokenizer = M.load_model(model_path, args, device)
+	model.eval()
 	#|========================================================
 	MAX_TOKENS = 400
 	bleu_metric = evaluate.load('bleu',trust_remote_code=True)
@@ -42,16 +43,14 @@ def translate(args):
 				output = model.generate(**input_ids, max_new_tokens=MAX_TOKENS, pad_token_id=tokenizer.pad_token_id)
 			decoded_outputs = tokenizer.batch_decode(output, skip_special_tokens=False)
 			outputs.extend(decoded_outputs)
-		with open('output.txt','w') as f:
-			f.write('\n-------------------------------------\n'.join(outputs))
 		hypothesis = [prompter.clean(o) for o in outputs]
-		with open('hyp.txt','w') as f:
-			f.write('\n'.join(hypothesis))
 	else:
 		translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
 		hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
 		hypothesis = [t['translation_text'] for t in hypothesis]
-
+		
+	with open('hyp.txt','w') as f:
+		f.write('\n'.join(hypothesis))
 	#print(hypothesis)
 	print('Evaluando metricas...')
 	bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]

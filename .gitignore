@@ -141,3 +141,4 @@ europarl-inmt/*
 nohup.*
 trace*
 *.sh
+*.out

@@ -46,8 +46,8 @@ class TranslationModel(L.LightningModule):
 		inputs = self.tokenizer(batch['source'], padding=True, text_target=batch['target'], return_tensors='pt').to('cuda')
 		outputs = self.forward(inputs)
 		loss = outputs.loss
-		metrics = {'train_loss': loss, 'max_len': outputs.logits.shape[-1]}
-		self.log_dict(metrics)
+		metrics = {'train_loss': loss}
+		self.log_dict(metrics,batch_size=len(batch['source']))
 		return loss
 	
 	def validation_step(self, batch, batch_idx):
@@ -58,7 +58,7 @@ class TranslationModel(L.LightningModule):
 		# # bleu = self.metric.compute(predictions=hyp, references=ref)
 		loss = self.forward(inputs).loss
 		metrics = {'val_loss': loss}
-		self.log_dict(metrics,batch_size=1)
+		self.log_dict(metrics,batch_size=len(batch['source']))
 		return metrics
 
 	def configure_optimizers(self):
@@ -156,14 +156,16 @@ def main():
                 L.pytorch.callbacks.ModelCheckpoint(monitor='val_loss', mode='min', save_top_k=3, save_weights_only=True,
 								  dirpath=f'models/{args.model_name}_{args.source+args.target}')]
 	accumulate = 32 // args.batch_size if args.batch_size < 32 else 1
-	trainer = L.Trainer(max_epochs=args.epochs,
-					 precision=16 if fp16 else 32,
-					 val_check_interval=0.2,
+	trainer = L.Trainer(#max_epochs=args.epochs,
+					 max_steps=10000,
+					 #precision=16 if fp16 else 32,
+					 #val_check_interval=0.2,
+					 val_check_interval=5000,
 					 accumulate_grad_batches=accumulate,
 					 default_root_dir=f'models/{args.model_name}_{args.source+args.target}',
 					 callbacks=callbacks)
 	
-	#trainer.validate(model=translator,dataloaders=dev_dataloader)
+	trainer.validate(model=translator,dataloaders=dev_dataloader)
 	trainer.fit(model=translator, train_dataloaders=train_dataloader, val_dataloaders=dev_dataloader)
 	#trainer.validate(model=translator,dataloaders=dev_dataloader)
 
