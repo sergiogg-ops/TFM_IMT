@@ -7,12 +7,33 @@ class Restrictor(ABC):
 	Parent class for the implementation of the constrained search of the response
 	'''
 	def __init__(self, vocab, tokenizer,prompt='', start='▁'):
-		self.vocab = vocab
 		self.start_char = start
+		self.eos = tokenizer.get_vocab()[tokenizer.eos_token]
 		self.start_toks = [value for key,value in tokenizer.get_vocab().items() if key[0] == self.start_char]
+
 		self.tokenizer = tokenizer
-		self.eos = self.tokenizer.get_vocab()[tokenizer.eos_token]
 		self.len_prompt = len(tokenizer.encode(prompt)) if prompt else 0
+
+		self.special_tokens = self.stop_tokens(tokenizer.get_vocab())
+		self.vocab = [tok for tok in vocab if tok not in self.special_tokens]
+	
+	def stop_tokens(self, vocab):
+		'''
+			Obtains the stop tokens for the generation.
+
+		Parameters:
+			vocab (dict): Vocabulary of the tokenizer.
+		Returns:
+			list: List of stop tokens.
+		'''
+		special_tokens = self.tokenizer.all_special_ids
+		if vocab[self.tokenizer.bos_token] in special_tokens:
+			special_tokens.remove(vocab[self.tokenizer.bos_token])
+		if self.eos not in special_tokens:
+			special_tokens.append(self.eos)
+		if '<end_of_turn>' in vocab:
+			special_tokens.append(vocab['<end_of_turn>'])
+		return special_tokens
 
 	@abstractmethod
 	def check_segments(self,tgt,hyp,verbose=False):
@@ -143,11 +164,11 @@ class PrefixRestrictor(Restrictor):
 				return [self.tok_prefix[pos]]
 			elif pos==len_prefix:
 				return self.start_toks
-		return self.vocab
+		return self.vocab + self.special_tokens
 	
-	def decode(self,input_ids):
+	def decode(self,input_ids, decode_func):
 		out_toks = input_ids[self.len_prompt+len(self.tok_prefix):]
-		return self.prefix + self.tokenizer.decode(out_toks, skip_special_tokens=True)
+		return self.prefix + decode_func(out_toks, self.tokenizer)
 
 class SegmentRestrictor(Restrictor):
 	'''
@@ -271,7 +292,6 @@ class SegmentRestrictor(Restrictor):
 			# final de segmento
 			if self.prev_tseg[i-1] != -1 and (self.prev_tseg[i-1] + 1 != self.prev_tseg[i] or self.prev_ini[i]):
 				pos = np.argmax(dp[i])
-				#print(i,pos,length)
 				t_seg = lcs(dp,t_seg,last_seg,i-length+1,pos-length,pos)
 				t_seg[i-length:i] = np.arange(pos-length,pos)
 				last_seg = i
@@ -287,12 +307,12 @@ class SegmentRestrictor(Restrictor):
 		if remove_eos:
 			self.tok_segments = [seg[:-1] for seg in self.tok_segments]
 	
-	def restrict(self,batch_id, input_ids):
-		idx_seg, idx_tok,last_match = self.get_state(input_ids)
+	def restrict(self, batch_id, input_ids):
+		idx_seg, idx_tok, last_match = self.get_state(input_ids)
 		waiting = len(input_ids) - last_match
 		# ¿Se ha terminado de añadir segmentos?
 		if idx_seg >= len(self.tok_segments):
-			return self.vocab	
+			return self.vocab + self.special_tokens
 		
 		# ¿hemos terminado de añadir el segmento actual?
 		# ultimo token de segmento -> tokens de inicio de palabra
@@ -320,7 +340,7 @@ class SegmentRestrictor(Restrictor):
 			return [token]
 		else:
 			# no se ha terminado de añadir segmentos -> no fin -> no eos
-			return self.vocab[:self.eos] + self.vocab[self.eos+1:]
+			return self.vocab
 	
 	def get_state(self,input_ids):
 		'''
@@ -332,7 +352,7 @@ class SegmentRestrictor(Restrictor):
 		Returns:
 			int: Index of the segment.
 			int: Index of the token in the segment.
-			int: Last token added that was part of a segment.
+			int: Last token added that was part of a segment in the whole sequence.
 		'''
 		cur_seg = 0
 		last_pos = self.len_prompt
@@ -356,7 +376,7 @@ class SegmentRestrictor(Restrictor):
 		else:
 			return cur_seg, -1, last_pos
 
-	def decode(self,input_ids):
+	def decode(self,input_ids, decode_func):
 			idx_seg = 0 # indice de segmentos
 			texto = ''
 			begin = 0
@@ -364,12 +384,12 @@ class SegmentRestrictor(Restrictor):
 			lengths = [len(seg) for seg in self.tok_segments]
 			for tok in range(len(input_ids)):
 				if idx_seg < len(self.tok_segments) and input_ids[(tok-lengths[idx_seg]):tok] == self.tok_segments[idx_seg]:
-					texto += self.tokenizer.decode(input_ids[begin:tok-lengths[idx_seg]]) + ' '
+					texto += decode_func(input_ids[begin:tok-lengths[idx_seg]], self.tokenizer) + ' '
 					texto += self.segments[idx_seg] + ' '
 					begin = tok + 1
 					idx_seg += 1
 			if begin < len(input_ids):
-				texto += self.tokenizer.decode(input_ids[begin:], skip_special_tokens=True)
+				texto += decode_func(input_ids[begin:], self.tokenizer)
 			return texto
 	
 def cruce(tgt,hyp,lent,lenh):

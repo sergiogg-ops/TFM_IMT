@@ -17,7 +17,7 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 wordTokenizer = TreebankWordTokenizer()
 extend = {'en':'English','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili','ne':'Nepali'}
 
-def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
+def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, prompter, verbose):
 	'''
 	Performs the simulation of the IMT task for one sentence
 
@@ -36,12 +36,13 @@ def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, verbose):
 		# Generate the translation
 		remove_sos = model_name in M.PROMPTERS
 		restrictor.prepare(remove_sos=remove_sos,remove_eos=not remove_sos)
+		printable = [restrictor.tokenizer.convert_ids_to_tokens(t) for t in restrictor.tok_segments]
 
 		ini = time()
 		generated_tokens = model.generate(**encoded_src,
 						max_new_tokens=MAX_TOKENS,
 						prefix_allowed_tokens_fn=restrictor.restrict).tolist()[0]
-		output = restrictor.decode(generated_tokens)
+		output = restrictor.decode(generated_tokens, prompter.decode)
 		if verbose:
 			print("ITE {0} ({1}): {2}".format(ite, len(generated_tokens), output))
 		#if args.model_name in M.PROMPTERS:
@@ -67,10 +68,10 @@ def translate(args):
 	#|========================================================
 	#| READ SOURCE AND TARGET DATASET
 	src_lines, trg_lines = M.load_data(args.folder, args.source, args.target, args.partition)
-	if args.model_name in M.PROMPTERS or 't5' in args.model_name:
-		prompt = f'Translate the sentence from {extend[args.source]} to {extend[args.target]} without further explanation.'+ '\nSentence: {sent}\nTranslation: '
+	if args.model_name in M.PROMPTERS:
+		prompter = M.get_prompter(args.model_name, args.source, args.target)
 	else:
-		prompt = '{sent}'
+		prompter = M.Prompter()
 	if args.final > -1:
 		src_lines = src_lines[:args.final]
 		trg_lines = trg_lines[:args.final]
@@ -110,11 +111,12 @@ def translate(args):
 
 		mouse_actions = 0
 		word_strokes = 0
-		n_words = len(R.tokenize(trg_lines[i],wordTokenizer=wordTokenizer))
+		#n_words = len(R.tokenize(trg_lines[i],wordTokenizer=wordTokenizer))
+		n_words = len(R.tokenize(c_trg,wordTokenizer=wordTokenizer))
 		n_chars = len(trg_lines[i])
 
 		# Convert them to ids
-		query = prompt.format(sent=c_src)
+		query = prompter.src_format(c_src, args.source, args.target)
 		encoded_src = tokenizer(query, return_tensors="pt").to(device)
 		# encoded_trg = [2] + tokenizer(text_target=c_trg).input_ids[:-1]
 		# if len(encoded_trg) > 512:
@@ -125,8 +127,18 @@ def translate(args):
 
 		iteraciones += 1
 		start_char = 'Ġ' if args.model_name == 'llama' else '▁'
-		restrictor = Restrictor(VOCAB,tokenizer,query,start_char,target_len=n_words)
-		word_strokes, mouse_actions, tiempo, iters = imt_simulation(model, args.model_name, restrictor, encoded_src, c_trg, args.verbose)
+		restrictor = Restrictor(vocab=VOCAB,
+						  tokenizer=tokenizer,
+						  prompt=query,
+						  start=start_char,
+						  target_len=n_words)
+		word_strokes, mouse_actions, tiempo, iters = imt_simulation(model, 
+															  args.model_name, 
+															  restrictor, 
+															  encoded_src, 
+															  c_trg, 
+															  prompter,
+															  args.verbose)
 		total_words += n_words
 		total_chars += n_chars
 		total_ws += word_strokes

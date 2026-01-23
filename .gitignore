@@ -132,13 +132,9 @@ cython_debug/
 # Ignore VSCode settings
 .vscode/
 
-*.pdf
-ploter.ipynb
 launcher.*
 models/*
-hplt/*
-europarl-inmt/*
-nohup.*
+data/*
+logs/*
 trace*
-*.sh
 *.out

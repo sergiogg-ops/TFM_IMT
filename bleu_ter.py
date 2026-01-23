@@ -19,9 +19,7 @@ def translate(args):
 	#| READ SOURCE AND TARGET DATASET
 	src_lines, trg_lines = M.load_data(args.folder, args.source, args.target, args.partition)
 	prompter = M.get_prompter(args.model_name, args.source, args.target)
-	src_lines = [prompter.src_format(l) for l in src_lines]
-	# src_lines = src_lines[:10]
-	# trg_lines = trg_lines[:10]
+	src_lines = [prompter.src_format(l, args.source, args.target) for l in src_lines]
 	#|========================================================
 	#| LOAD MODEL AND TOKENIZER
 	model_path = args.model
@@ -41,22 +39,29 @@ def translate(args):
 			input_ids = tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to(device)
 			with torch.no_grad():
 				output = model.generate(**input_ids, max_new_tokens=MAX_TOKENS, pad_token_id=tokenizer.pad_token_id)
-			decoded_outputs = tokenizer.batch_decode(output, skip_special_tokens=False)
+			decoded_outputs = prompter.batch_decode(output, tokenizer)
 			outputs.extend(decoded_outputs)
-		hypothesis = [prompter.clean(o) for o in outputs]
+		hypothesis = [prompter.clean(src, o) for src, o in zip(src_lines, outputs)]
 	else:
 		translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
 		hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
 		hypothesis = [t['translation_text'] for t in hypothesis]
-		
+	
 	with open('hyp.txt','w') as f:
 		f.write('\n'.join(hypothesis))
 	#print(hypothesis)
-	print('Evaluando metricas...')
-	bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]
-	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines) if len(hyp.strip()) > 0 and len(ref.strip()) > 0]
+	#bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines)]
+	print('Calculando métricas...')
+	bleu, ter = [], []
+	for hyp, ref in tqdm(zip(hypothesis, trg_lines), total=len(trg_lines), desc="BLEU"):
+		hyp, ref = hyp.strip(), ref.strip()
+		if len(hyp) == 0:
+			bleu.append(0.0)
+		else:
+			bleu.append(bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'])	
 	print('BLEU:')
 	print(f'\t{sum(bleu)/len(bleu)}')
+	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines)]
 	print('TER:')
 	print(f'\t{sum(ter)/len(ter)}')
 	with open(f'{args.folder}/{args.model_name}.{args.target}', 'w') as file:

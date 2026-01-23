@@ -88,7 +88,7 @@ def get_url(model_name):
 	elif model_name == 'qwen':
 		return "Qwen/Qwen2.5-VL-7B-Instruct"
 	elif model_name == 'eurollm':
-		return "utter-project/EuroLLM-1.7B-Instruct"
+		return "utter-project/EuroLLM-1.7B"
 	elif model_name == 'gemma':
 		return "google/gemma-3-1b-it"
 	else:
@@ -127,6 +127,7 @@ def read_parameters():
 	parser.add_argument("-e","--epochs",type=int,default=3,help="Number of epochs")
 	parser.add_argument('-bs','--batch_size',type=int,default=32,help='Batch size')
 	parser.add_argument('-lr','--learning_rate',type=float,default=2e-5,help='Learning rate of the optimizer')
+	parser.add_argument('-log', '--log_dir', type=str, default='logs', help='Directory to save the logs')
 
 	args = parser.parse_args()
 	return args
@@ -155,11 +156,12 @@ def main():
 	callbacks = [L.pytorch.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=2, min_delta=0.1),
                 L.pytorch.callbacks.ModelCheckpoint(monitor='val_loss', mode='min', save_top_k=3, save_weights_only=True,
 								  dirpath=f'models/{args.model_name}_{args.source+args.target}')]
+	logger = L.pytorch.loggers.TensorBoardLogger(save_dir=args.log_dir, name=f'{args.model_name}_{args.source+args.target}')
 	accumulate = 32 // args.batch_size if args.batch_size < 32 else 1
-	trainer = L.Trainer(#max_epochs=args.epochs,
-					 max_steps=10000,
+	trainer = L.Trainer(max_epochs=args.epochs,
 					 #precision=16 if fp16 else 32,
 					 #val_check_interval=0.2,
+					 logger=logger,
 					 val_check_interval=5000,
 					 accumulate_grad_batches=accumulate,
 					 default_root_dir=f'models/{args.model_name}_{args.source+args.target}',

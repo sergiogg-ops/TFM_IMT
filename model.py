@@ -10,19 +10,32 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
 PROMPTERS = ['llama','qwen','eurollm','gemma']
 PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.'
 NAMES = ['mbart','m2m','flant5','nllb','llama','qwen','eurollm','gemma']
+ISO = {'en':'English',
+	   	'ca':'Catalan',
+		'fr':'French',
+		'de':'German',
+		'es':'Spanish',
+		'gl':'Galician',
+		'bn':'Bengali',
+		'sw':'Swahili'}
 
 class Prompter:
 	def __init__(self, instruction = ''):
 		self. instr = instruction
 
-	def src_format(self, text):
-		return self.instr + '\n' + text
+	def src_format(self, text, src_lang, tgt_lang):
+		return text
 	
 	def tgt_format(self, src, tgt):
-		return self.src_format(src) +'\nTranslation: ' + tgt
+		return tgt
+	
+	def decode(self, tokens, tokenizer, **kwargs):
+		return tokenizer.decode(tokens, skip_special_tokens=True, **kwargs)
+	
+	def batch_decode(self, tokens, tokenizer, **kwargs):
+		return tokenizer.batch_decode(tokens, skip_special_tokens=True, **kwargs)
 	
 	def clean(self, text):
-		text = text.split('Translation:')[-1].strip()
 		return text
 
 class LlamaPrompter(Prompter):
@@ -35,22 +48,35 @@ class LlamaPrompter(Prompter):
 		return text[:text.find('<|eot_id|>')].strip()
 	
 class EuroPrompter(Prompter):
-	def src_format(self, text):
-		return f'<|im_start|>system {self.instr}<|im_end|><|im_start|>user{text}<|im_end|><|im_start|>assistant Translation:'
-	def tgt_format(self, src, tgt):
-		return self.src_format(src) + tgt + '<|im_end|>'
-	def clean(self, text):
-		text = text.split('<|im_start|> assistant Translation:')[-1].strip()
-		return text[:text.find('<|im_end|>')].strip()
+	def src_format(self, text, src_lang, tgt_lang):
+		src_lang = ISO.get(src_lang, src_lang)
+		tgt_lang = ISO.get(tgt_lang, tgt_lang)
+		return f'{src_lang}: {text}. {tgt_lang}:'
+	def tgt_format(self, src, tgt, src_lang, tgt_lang):
+		src_lang = ISO.get(src_lang, src_lang)
+		tgt_lang = ISO.get(tgt_lang, tgt_lang)
+		return self.src_format(src, src_lang, tgt_lang) + tgt
+	def clean(self, src, hyp):
+		return hyp[len(src):]
 
 class GemmaPrompter(Prompter):
-	def src_format(self, text):
-		return f'<start_of_turn>user {self.instr}\nSentence: {text}<end_of_turn>\n<start_of_turn>model Translation:'
-	def tgt_format(self, src, tgt):
-		return self.src_format(src) + tgt
-	def clean(self, text):
-		text = text.split('<start_of_turn>model Translation:')[-1].strip()
-		return text[:text.find('<end_of_turn>')].strip()
+	def src_format(self, text, src_lang, tgt_lang):
+		src_lang = ISO.get(src_lang, src_lang)
+		tgt_lang = ISO.get(tgt_lang, tgt_lang)
+		return f"<start_of_turn>user\nTranslate the following {src_lang} text to {tgt_lang} without further explanation: {text}<end_of_turn>\n<start_of_turn>model\n"
+	def tgt_format(self, src, tgt, src_lang, tgt_lang):
+		src_lang = ISO.get(src_lang, src_lang)
+		tgt_lang = ISO.get(tgt_lang, tgt_lang)
+		return f"<start_of_turn>user\nTranslate the following {src_lang} text to {tgt_lang} without further explanation: {src}<end_of_turn>\n<start_of_turn>model\n{tgt}<end_of_turn>"
+	def decode(self, tokens, tokenizer, **kwargs):
+		return tokenizer.decode(tokens, skip_special_tokens=False, **kwargs)
+	def batch_decode(self, tokens, tokenizer, **kwargs):
+		return tokenizer.batch_decode(tokens, skip_special_tokens=False, **kwargs)
+	def clean(self, src, hyp):
+		text = hyp[len(src):]
+		text = text.split('<start_of_turn>model')[-1].strip()
+		text = text.split('<end_of_turn>')[0].strip()
+		return text
 
 class MosesCorpus(Dataset):
 	'''
@@ -66,20 +92,13 @@ class MosesCorpus(Dataset):
 		'''
 		self.src = []
 		self.tgt = []
-		# with open(source,'r') as file:
-		# 	self.src = [l for l in file]
-		# self.src = [prompter.src_format(l) for l in self.src]
-		# with open(target,'r') as file:
-		# 	self.tgt = [l for l in file]
-		# self.tgt = [src + tgt for src, tgt in zip(self.src,self.tgt)]
+		src_lang = source.split('.')[-1]
+		tgt_lang = target.split('.')[-1]
 		with open(source,'r') as src_file:
 			with open(target,'r') as tgt_file:
 				for s, t in zip(src_file, tgt_file):
-					self.src.append(prompter.src_format(s))
-					self.tgt.append(prompter.tgt_format(s,t))
-		# if not tok.pad_token:
-		# 	tok.pad_token = tok.eos_token
-		#self.inputs = tok(self.src, text_target=self.tgt, max_length=128,truncation=True, padding=True, return_tensors='pt')
+					self.src.append(prompter.src_format(s, src_lang, tgt_lang))
+					self.tgt.append(prompter.tgt_format(s,t, src_lang, tgt_lang))
     
 	def __len__(self):
 		return len(self.src)
@@ -130,10 +149,10 @@ def load_model(model_path, args, _dev='cpu'):
 		_tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
 	elif args.model_name == 'eurollm':
 		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
-		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B-Instruct")
+		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B")
 	elif args.model_name == 'gemma':
 		_mdl = AutoModelForCausalLM.from_pretrained(model_path, token='hf_token', **kwargs)
-		_tok = AutoTokenizer.from_pretrained("google/gemma-3-1b-it", token='hf_token')
+		_tok = AutoTokenizer.from_pretrained("google/gemma-3-4b-it", token='hf_token')
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)
@@ -165,16 +184,16 @@ def load_data(folder,source, target, partition):
 
 def get_prompter(model_name, source, target):
 	extend = {'en':'English','ca':'Catalan','fr':'French','de':'German','es':'Spanish', 'gl':'Galician','bn':'Bengali','sw':'Swahili'}
-	prompt = f'Translate the sentence from {extend[source]} to {extend[target]} without further explanation.'
-	# if model_name == 'flant5' or model_name == 'llama':
-	# 	prompter = LlamaPrompter(prompt)
-	# elif model_name == 'eurollm':
-	# 	prompter = EuroPrompter(prompt)
-	# elif model_name == 'gemma':
-	# 	prompter = GemmaPrompter(prompt)
-	# else:
-	# 	prompter = Prompter('')
-	prompter = Prompter(prompt)
+	#prompt = f'Translate the sentence from {extend[source]} to {extend[target]} without further explanation.'
+	if model_name == 'flant5' or model_name == 'llama':
+		prompter = LlamaPrompter()
+	elif model_name == 'eurollm':
+		prompter = EuroPrompter()
+	elif model_name == 'gemma':
+		prompter = GemmaPrompter()
+	else:
+		prompter = Prompter('')
+	#prompter = Prompter(prompt)
 	return prompter
 
 def check_language_code(code):
