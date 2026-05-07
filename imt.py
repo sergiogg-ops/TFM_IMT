@@ -36,7 +36,7 @@ def imt_simulation(model, model_name, restrictor, encoded_src, c_trg, prompter, 
 		# Generate the translation
 		remove_sos = model_name in M.PROMPTERS
 		restrictor.prepare(remove_sos=remove_sos,remove_eos=not remove_sos)
-		printable = [restrictor.tokenizer.convert_ids_to_tokens(t) for t in restrictor.tok_segments]
+		# printable = [restrictor.tokenizer.convert_ids_to_tokens(t) for t in restrictor.tok_segments]
 
 		ini = time()
 		generated_tokens = model.generate(**encoded_src,
