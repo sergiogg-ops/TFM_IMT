@@ -6,7 +6,9 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
 						  AutoModelForCausalLM, AutoModelForImageTextToText,
 						  AutoProcessor, AutoModelForImageTextToText)
+from os import getenv
 
+HF_TOKEN = getenv('HF_TOKEN')
 PROMPTERS = ['llama','qwen','eurollm','gemma']
 PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.'
 NAMES = ['mbart','m2m','flant5','nllb','llama','qwen','eurollm','gemma']
@@ -92,6 +94,7 @@ class MosesCorpus(Dataset):
 		'''
 		self.src = []
 		self.tgt = []
+		self.raw_tgt = []
 		src_lang = source.split('.')[-1]
 		tgt_lang = target.split('.')[-1]
 		with open(source,'r') as src_file:
@@ -99,6 +102,7 @@ class MosesCorpus(Dataset):
 				for s, t in zip(src_file, tgt_file):
 					self.src.append(prompter.src_format(s, src_lang, tgt_lang))
 					self.tgt.append(prompter.tgt_format(s,t, src_lang, tgt_lang))
+					self.raw_tgt.append(t.strip())
     
 	def __len__(self):
 		return len(self.src)
@@ -108,7 +112,8 @@ class MosesCorpus(Dataset):
 		#   'attention_mask': self.inputs['attention_mask'][idx], 
 		#   'labels': self.inputs['labels'][idx]}
 		return {'source': self.src[idx],
-		  	'target': self.tgt[idx]}
+		  	'target': self.tgt[idx],
+        	'raw_target': self.raw_tgt[idx]}
 	
 def load_model(model_path, args, _dev='cpu'):
 	'''
@@ -142,17 +147,21 @@ def load_model(model_path, args, _dev='cpu'):
 		_tok = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M",
 											src_lang=args.source_code, tgt_lang=args.target_code)
 	elif args.model_name == 'llama':
-		_mdl = AutoModelForCausalLM.from_pretrained(model_path, token='hf_token', **kwargs)
-		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct",token='hf_token', padding_side='left')
+		_mdl = AutoModelForCausalLM.from_pretrained(model_path, token='HF_TOKEN', **kwargs)
+		_tok = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B-Instruct",token='HF_TOKEN', padding_side='left')
+		_tok.padding_side = 'left'
 	elif args.model_name == 'qwen':
 		_mdl = AutoModelForImageTextToText.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+		_tok.padding_side = 'left'
 	elif args.model_name == 'eurollm':
 		_mdl = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
 		_tok = AutoTokenizer.from_pretrained("utter-project/EuroLLM-1.7B")
+		_tok.padding_side = 'left'
 	elif args.model_name == 'gemma':
-		_mdl = AutoModelForCausalLM.from_pretrained(model_path, token='hf_token', **kwargs)
-		_tok = AutoTokenizer.from_pretrained("google/gemma-3-4b-it", token='hf_token')
+		_mdl = AutoModelForCausalLM.from_pretrained(model_path, token='HF_TOKEN')
+		_tok = AutoTokenizer.from_pretrained("google/gemma-3-4b-it", token='HF_TOKEN')
+		_tok.padding_side = 'left'
 	else:
 		print('Model not implemented: {0}'.format(args.model_name))
 		sys.exit(1)

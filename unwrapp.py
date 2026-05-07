@@ -34,7 +34,7 @@ def get_path(model_name):
     elif model_name == 'eurollm':
         return "utter-project/EuroLLM-1.7B"
     elif model_name == 'gemma':
-        return "google/gemma-3-1b-it"
+        return "google/gemma-3-4b-it"
     else:
         print('Model not implemented: {0}'.format(model_name))
         sys.exit(1)
@@ -54,7 +54,10 @@ if __name__ == '__main__':
         )
         MODEL = get_peft_model(MODEL, lora_config)
 
-    translator = TranslationModel.load_from_checkpoint(args.path, model=MODEL, tokenizer=TOKENIZER)
+    translator = TranslationModel.load_from_checkpoint(args.path, 
+                                                       map_location='cpu',
+                                                       model=MODEL, 
+                                                       tokenizer=TOKENIZER)
 
     name = f'{args.model_name}_{args.source + args.target}'
     translator.model.save_pretrained(name)

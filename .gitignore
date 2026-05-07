@@ -132,9 +132,11 @@ cython_debug/
 # Ignore VSCode settings
 .vscode/
 
-launcher.*
 models/*
+ft_models/*
 data/*
+hplt/*
 logs/*
 trace*
 *.out
+*.tar
