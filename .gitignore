@@ -140,3 +140,4 @@ logs/*
 trace*
 *.out
 *.tar
+.env
