@@ -37,11 +37,14 @@ def translate(args):
 			model.to(device)
 			batch = src_lines[i:i + args.batch_size]
 			input_ids = tokenizer(batch, return_tensors="pt", padding=True, truncation=True).to(device)
+			prompt_lengths = input_ids['attention_mask'].sum(dim=1)
 			with torch.no_grad():
 				output = model.generate(**input_ids, max_new_tokens=MAX_TOKENS, pad_token_id=tokenizer.pad_token_id)
+				output = [output[i, prompt_lengths[i]:-1] for i in range(len(batch))]
 			decoded_outputs = prompter.batch_decode(output, tokenizer)
 			outputs.extend(decoded_outputs)
-		hypothesis = [prompter.clean(src, o) for src, o in zip(src_lines, outputs)]
+		#hypothesis = [prompter.clean(src, o) for src, o in zip(src_lines, outputs)]
+		hypothesis = outputs
 	else:
 		translator = TranslationPipeline(model=model,tokenizer=tokenizer, batch_size=args.batch_size, device=device)
 		hypothesis = translator(src_lines, src_lang=args.source_code, tgt_lang=args.target_code, max_length=MAX_TOKENS)
@@ -50,22 +53,15 @@ def translate(args):
 	with open('hyp.txt','w') as f:
 		f.write('\n'.join(hypothesis))
 	#print(hypothesis)
-	#bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines)]
 	print('Calculando métricas...')
-	bleu, ter = [], []
-	for hyp, ref in tqdm(zip(hypothesis, trg_lines), total=len(trg_lines), desc="BLEU"):
-		hyp, ref = hyp.strip(), ref.strip()
-		if len(hyp) == 0:
-			bleu.append(0.0)
-		else:
-			bleu.append(bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'])	
-	print('BLEU:')
-	print(f'\t{sum(bleu)/len(bleu)}')
-	ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines)]
-	print('TER:')
-	print(f'\t{sum(ter)/len(ter)}')
+	bleu = bleu_metric.compute(predictions=hypothesis,references=[[ref] for ref in trg_lines], smooth=True)['bleu']
+	print(f'BLEU: {bleu:.4f}')
+	ter = ter_metric.compute(predictions=hypothesis,references=[[ref] for ref in trg_lines])['score']
+	print(f'TER: {ter:.4f}')
+	local_bleu = [bleu_metric.compute(predictions=[hyp],references=[ref])['bleu'] for hyp, ref in zip(hypothesis, trg_lines)]
+	local_ter = [ter_metric.compute(predictions=[hyp],references=[ref])['score'] for hyp, ref in zip(hypothesis, trg_lines)]
 	with open(f'{args.folder}/{args.model_name}.{args.target}', 'w') as file:
-		for b, t in zip(bleu,ter):
+		for b, t in zip(local_bleu,	local_ter):
 			file.write(f'{b}\t{t}\n')
 
 def check_parameters(args):
