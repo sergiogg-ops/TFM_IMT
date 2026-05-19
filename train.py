@@ -124,30 +124,71 @@ class DecoderOnlyTranslationModel(TranslationModel):
         return ids
 
     def training_step(self, batch, batch_idx):
-        inputs = self._tokenize_source(batch['source'])
-        inputs['labels'] = self._tokenize_target(batch['raw_target'])
-        loss = self.forward(inputs).loss
+        # Tokenize the FULL sequence (prompt + translation)
+        self.tokenizer.padding_side = 'right'
+        full_inputs = self.tokenizer(
+            batch['target'],   # <-- 'target' already contains prompt+translation via tgt_format()
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors='pt'
+        ).to(self.device)
+        self.tokenizer.padding_side = 'left'
+
+        labels = full_inputs['input_ids'].clone()
+
+        # Mask the prompt portion — only train on the translation tokens
+        src_inputs = self.tokenizer(
+            batch['source'],
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors='pt'
+        ).to(self.device)
+        src_lengths = src_inputs['attention_mask'].sum(dim=1)  # actual token count per sample
+
+        for i, src_len in enumerate(src_lengths):
+            labels[i, :src_len] = -100  # mask prompt tokens
+
+        # Also mask padding
+        labels[labels == self.tokenizer.pad_token_id] = -100
+
+        full_inputs['labels'] = labels
+        loss = self.model(**full_inputs).loss
         self.log_dict({'train_loss': loss}, batch_size=len(batch['source']))
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs = self._tokenize_source(batch['source'])
-        inputs['labels'] = self._tokenize_target(batch['raw_target'])
-        loss = self.forward(inputs).loss
+        self.tokenizer.padding_side = 'right'
+        full_inputs = self.tokenizer(
+            batch['target'],
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors='pt'
+        ).to(self.device)
+        self.tokenizer.padding_side = 'left'
 
-        # outputs = self.model.generate(
-        #     input_ids=inputs['input_ids'],
-        #     attention_mask=inputs['attention_mask'],
-        #     max_new_tokens=128
-        # )
-        # # For decoder-only models, strip the input prompt tokens from the output
-        # prompt_len = inputs['input_ids'].shape[-1]
-        # outputs = outputs[:, prompt_len:]
+        labels = full_inputs['input_ids'].clone()
 
-        # hyp = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        # ref = batch['target']
-        # bleu = self.metric.compute(predictions=hyp, references=batch['raw_target'])
-        metrics = {'val_loss': loss}#, 'val_bleu': bleu['score']}
+        src_inputs = self.tokenizer(
+            batch['source'],
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors='pt'
+        ).to(self.device)
+        src_lengths = src_inputs['attention_mask'].sum(dim=1)
+
+        for i, src_len in enumerate(src_lengths):
+            labels[i, :src_len] = -100
+
+        labels[labels == self.tokenizer.pad_token_id] = -100
+
+        full_inputs['labels'] = labels
+        loss = self.model(**full_inputs).loss
+
+        metrics = {'val_loss': loss}
         self.log_dict(metrics, batch_size=len(batch['source']))
         return metrics
 
