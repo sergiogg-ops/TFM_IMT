@@ -6,11 +6,15 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
 						  AutoModelForCausalLM, AutoModelForImageTextToText,
 						  AutoProcessor, AutoModelForImageTextToText)
+from warnings import UserWarning
 from os import getenv
 
-HF_TOKEN = getenv('HF_TOKEN')
+try:
+	HF_TOKEN = getenv('HF_TOKEN')
+except Exception:
+	HF_TOKEN = None
+	raise UserWarning(".env file not found. Create it from .env.example if you want to access to restricted repositories.")
 PROMPTERS = ['llama','qwen','eurollm','gemma']
-PROMPT = 'Translate the sentence from {src_lang} to {tgt_lang} without further explanation.'
 NAMES = ['mbart','m2m','flant5','nllb','llama','qwen','eurollm','gemma']
 ISO = {'en':'English',
 	   	'ca':'Catalan',

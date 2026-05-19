@@ -6,7 +6,16 @@ import numpy as np
 import pandas as pd
 
 BAR_WIDTH = 0.2
-iso639 = {'en':'Inglés','fr':'Francés','de':'Alemán','es':'Español','gl':'Gallego','sw':'Suajili','ne':'Nepalí'}
+iso639 = {
+    'en':'Inglés',
+    'fr':'Francés',
+    'de':'Alemán',
+    'es':'Español',
+    'gl':'Gallego',
+    'sw':'Suajili',
+    'ne':'Nepalí',
+    'ca':'Catalán'
+}
 
 def get_latex(x):
     if pd.isna(x):
@@ -22,7 +31,8 @@ def plot_time(data, filename):
     xlabels = data['modelo'].unique()
     y = [min(data[data['modelo'] == modelo]['tiempo']) for modelo in xlabels]
     plt.bar(xlabels,y)
-    plt.xticks(xlabels)
+    plt.xticks(xlabels, rotation=45)
+    plt.gca().tick_params(axis='x', labelsize=8)
     plt.ylabel('Tiempo (s)')
     plt.savefig(filename)
 
@@ -31,66 +41,78 @@ def plot_chart(data,filename, langs):
     x = np.arange(len(MODELS))
     pairs = [(src,'en') for src in langs] + [('en',trg) for trg in langs]
 
-    plt.figure(figsize=(17,10))
+    plt.figure(figsize=(17,12))
     for pair, i in zip(pairs, np.arange(1,7)):
         src, trg = pair
-        plt.subplot(2,len(pairs)//2,i)
-        pref_wsr = [data[(data['modelo'] == modelo) & (data['metodo'] == 'prefix') & 
-                      (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for modelo in MODELS]
-        seg_wsr = [data[(data['modelo'] == modelo) & (data['metodo'] == 'segment') & 
-                      (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for modelo in MODELS]
-        pref_mar = [data[(data['modelo'] == modelo) & (data['metodo'] == 'prefix') & 
-                      (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for modelo in MODELS]
-        seg_mar = [data[(data['modelo'] == modelo) & (data['metodo'] == 'segment') & 
-                      (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for modelo in MODELS]
-        plt.bar(x-3*BAR_WIDTH/2,pref_wsr, BAR_WIDTH, label='WSR prefijos')
-        plt.bar(x+BAR_WIDTH-3*BAR_WIDTH/2,seg_wsr, BAR_WIDTH, label='WSR segmentos')
-        plt.bar(x+2*BAR_WIDTH-3*BAR_WIDTH/2,pref_mar, BAR_WIDTH, label='MAR prefijos')
-        plt.bar(x+3*BAR_WIDTH-3*BAR_WIDTH/2,seg_mar, BAR_WIDTH, label='MAR segmentos')
-        plt.xticks(x, MODELS)
-        plt.xlabel('Modelo')
-        plt.legend()
-        plt.title(f'{iso639[src]}-{iso639[trg]}')
+        try:
+            plt.subplot(2,len(pairs)//2,i)
+            pref_wsr = [data[(data['modelo'] == modelo) & (data['metodo'] == 'prefix') & 
+                        (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for modelo in MODELS]
+            seg_wsr = [data[(data['modelo'] == modelo) & (data['metodo'] == 'segment') & 
+                        (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for modelo in MODELS]
+            pref_mar = [data[(data['modelo'] == modelo) & (data['metodo'] == 'prefix') & 
+                        (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for modelo in MODELS]
+            seg_mar = [data[(data['modelo'] == modelo) & (data['metodo'] == 'segment') & 
+                        (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for modelo in MODELS]
+            plt.bar(x-3*BAR_WIDTH/2,pref_wsr, BAR_WIDTH, label='WSR prefijos')
+            plt.bar(x+BAR_WIDTH-3*BAR_WIDTH/2,seg_wsr, BAR_WIDTH, label='WSR segmentos')
+            plt.bar(x+2*BAR_WIDTH-3*BAR_WIDTH/2,pref_mar, BAR_WIDTH, label='MAR prefijos')
+            plt.bar(x+3*BAR_WIDTH-3*BAR_WIDTH/2,seg_mar, BAR_WIDTH, label='MAR segmentos')
+            plt.xticks(x, MODELS, rotation=30)
+            plt.gca().tick_params(axis='x', labelsize=8)
+            plt.xlabel('Modelo')
+            plt.legend()
+            plt.title(f'{iso639[src]}-{iso639[trg]}')
+        except ValueError:
+            print(f'No hay datos para {src}-{trg}')
+    plt.subplots_adjust(hspace=0.25)
     plt.savefig(filename)
-    plt.show()
+    #plt.show()
 
-parser = ArgumentParser(description='Genera tablas en latex a partir de un archivo csv')
-parser.add_argument('file', type=str, default='test.csv', help='Archivo que leer')
-parser.add_argument('-o','--output', type=str, default='figuras', help='Directorio donde guardar las tablas y figuras')
-parser.add_argument('-opt','--opcion', type=str, default='general', choices=['general','calidad','prefijos','segmentos','tiempos','prefseg'],help='Opción de tabla a mostrar')
-parser.add_argument('-l','--lang', default=['fr','de','es','gl','sw','ne'], nargs='+', help='Idiomas a mostrar (a parte del ingles)')
-parser.add_argument('-m','--modelo', type=str, help='Modelo a mostrar')
-args = parser.parse_args()
+def parse_args():
+    parser = ArgumentParser(description='Genera tablas en latex a partir de un archivo csv')
+    parser.add_argument('file', type=str, default='test.csv', help='Archivo que leer')
+    parser.add_argument('-o','--output', type=str, default='figuras', help='Directorio donde guardar las tablas y figuras')
+    parser.add_argument('-opt','--opcion', type=str, default='general', choices=['general','calidad','prefijos','segmentos','tiempos','prefseg'],help='Opción de tabla a mostrar')
+    parser.add_argument('-l','--lang', default=['fr','de','es','gl','sw','ne'], nargs='+', help='Idiomas a mostrar (a parte del ingles)')
+    parser.add_argument('-m','--modelo', type=str, nargs='*', default=[], help='Modelo a mostrar')
+    return parser.parse_args()
 
-data = pd.read_csv(args.file)
-data = data[(data['src'].isin(args.lang)) | (data['trg'].isin(args.lang))]
-data = data.sort_values(by=['modelo','src','trg'])  
+def main():
+    args = parse_args()
+    data = pd.read_csv(args.file)
+    data = data[(data['src'].isin(args.lang)) | (data['trg'].isin(args.lang))]
+    data = data.sort_values(by=['modelo','src','trg'])  
+    
+    if len(args.modelo) > 0:
+        data = data[data['modelo'].isin(args.modelo)]
+        #data = data.drop(columns='modelo')
 
-if args.opcion == 'tiempos':
-    plot_time(data,os.path.join(args.output,'tiempos.png'))
-    exit()
-if args.opcion == 'prefseg':
-    plot_chart(data,os.path.join(args.output,'pref_seg.png'), args.lang)
-    exit()
-if args.modelo:
-    data = data[data['modelo'] == args.modelo]
-    data = data.drop(columns='modelo')
+    if args.opcion == 'tiempos':
+        plot_time(data,os.path.join(args.output,'tiempos.png'))
+        exit()
+    if args.opcion == 'prefseg':
+        plot_chart(data,os.path.join(args.output,'pref_seg.png'), args.lang)
+        exit()
 
-if args.opcion == 'general':
-    data = data.drop(columns=['observaciones'])
-elif args.opcion == 'calidad':
-    data = data[data['metodo'] == 'segment']
-    data = data.drop(columns=['metodo','wsr','mar','observaciones'])
-elif args.opcion == 'prefijos':
-    data = data[data['metodo'] == 'prefix']
-    data = data.drop(columns=['metodo','bleu','ter','observaciones'])
-else:
-    data = data[data['metodo'] == 'segment']
-    data = data.drop(columns=['metodo','bleu','ter','observaciones'])
+    if args.opcion == 'general':
+        data = data.drop(columns=['observaciones'])
+    elif args.opcion == 'calidad':
+        data = data[data['metodo'] == 'segment']
+        data = data.drop(columns=['metodo','wsr','mar','observaciones'])
+    elif args.opcion == 'prefijos':
+        data = data[data['metodo'] == 'prefix']
+        data = data.drop(columns=['metodo','bleu','ter','observaciones'])
+    else:
+        data = data[data['metodo'] == 'segment']
+        data = data.drop(columns=['metodo','bleu','ter','observaciones'])
 
-if not os.path.exists(args.output):
-    os.makedirs(args.output)
-latex_table = data.style.format(get_latex).hide(axis='index').to_latex()
-with open(os.path.join(args.output,f'{args.opcion}.tex'), 'w') as f:
-    f.write(latex_table)
-print(latex_table)
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+    latex_table = data.style.format(get_latex).hide(axis='index').to_latex()
+    with open(os.path.join(args.output,f'{args.opcion}.tex'), 'w') as f:
+        f.write(latex_table)
+    print(latex_table)
+
+if __name__ == '__main__':
+    main()
