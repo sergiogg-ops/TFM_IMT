@@ -6,14 +6,14 @@ from transformers import (AutoModelForSeq2SeqLM, AutoTokenizer,
                           MBart50TokenizerFast, MBartForConditionalGeneration,
 						  AutoModelForCausalLM, AutoModelForImageTextToText,
 						  AutoProcessor, AutoModelForImageTextToText)
-from warnings import UserWarning
+from warnings import warn
 from os import getenv
 
 try:
 	HF_TOKEN = getenv('HF_TOKEN')
 except Exception:
 	HF_TOKEN = None
-	raise UserWarning(".env file not found. Create it from .env.example if you want to access to restricted repositories.")
+	raise warn(".env file not found. Create it from .env.example if you want to access to restricted repositories.")
 PROMPTERS = ['llama','qwen','eurollm','gemma']
 NAMES = ['mbart','m2m','flant5','nllb','llama','qwen','eurollm','gemma']
 ISO = {'en':'English',

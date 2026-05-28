@@ -141,3 +141,4 @@ trace*
 *.out
 *.tar
 .env
+figuras/*

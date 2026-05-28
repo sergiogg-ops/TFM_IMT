@@ -45,7 +45,6 @@ def plot_chart(data,filename, langs):
     for pair, i in zip(pairs, np.arange(1,7)):
         src, trg = pair
         try:
-            plt.subplot(2,len(pairs)//2,i)
             pref_wsr = [data[(data['modelo'] == modelo) & (data['metodo'] == 'prefix') & 
                         (data['src']==src) & (data['trg']==trg)]['wsr'].values.item() for modelo in MODELS]
             seg_wsr = [data[(data['modelo'] == modelo) & (data['metodo'] == 'segment') & 
@@ -54,11 +53,13 @@ def plot_chart(data,filename, langs):
                         (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for modelo in MODELS]
             seg_mar = [data[(data['modelo'] == modelo) & (data['metodo'] == 'segment') & 
                         (data['src']==src) & (data['trg']==trg)]['mar'].values.item() for modelo in MODELS]
+            plt.subplot(2,len(pairs)//2,i)
             plt.bar(x-3*BAR_WIDTH/2,pref_wsr, BAR_WIDTH, label='WSR prefijos')
             plt.bar(x+BAR_WIDTH-3*BAR_WIDTH/2,seg_wsr, BAR_WIDTH, label='WSR segmentos')
             plt.bar(x+2*BAR_WIDTH-3*BAR_WIDTH/2,pref_mar, BAR_WIDTH, label='MAR prefijos')
             plt.bar(x+3*BAR_WIDTH-3*BAR_WIDTH/2,seg_mar, BAR_WIDTH, label='MAR segmentos')
             plt.xticks(x, MODELS, rotation=30)
+            plt.ylim(0,1)
             plt.gca().tick_params(axis='x', labelsize=8)
             plt.xlabel('Modelo')
             plt.legend()
