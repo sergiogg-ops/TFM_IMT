@@ -1,39 +1,107 @@
-# Interactive machine translation
+# Interactive Machine Translation
 
-This git contains code to train several LLMs and perform simulated sesions of interactive machine translation based in prefixes and segments. This is:
+This repository implements training, evaluation, and simulation tools for interactive machine translation (IMT) using both encoder-decoder and decoder-only large language models.
 
-1. The system translates the sentence to the target language, offering an initial hypothesis
-2. If the translation is good enough the "human" can stop the proccess. Also, one can say that the best solution is the result of concatenate all the validated segments.
-3. The human can mark as many segments as needed. In the prefix based approach the only segment that one can mark is the one between the begining of the translation and the first incorrect word.
-4. In the segment based approach the human can mark pairs of segments that should be one right after the other in the ideal translation.
-5. The human can type some corrections by keyboard.
-6. The system will try another hypothesis minding the restrictions that the human has introduced.
+The main workflow is:
+1. Translate a source sentence to the target language.
+2. Simulate a human interaction with the output using prefix-based or segment-based corrections.
+3. Restrict future model generations according to validated segments or corrected prefixes.
+4. Measure IMT costs such as word-stroke ratio (WSR), mouse-action ratio (MAR), and generation iterations.
 
-# Use
-- `train.py` can be used to fine-tune several LLMs to the IMT task, using the pytorch lightning framework.
-- `utils/unwrapp.py` can be used to extract the fine-tuned models from the lightning envelope, and obtain the weights of the models.
-- `bleu_ter.py` can be used to evaluate the models in a classic machine translation task.
-- `imt.py` can be used to evaluate the models in a simulated IMT session with some dataset. Both segment-based and prefix-based protocols are available.
-- `model.py` is a library script that contains utilities for LLMs management.
-- `restriction.py` is a library script that contains utilities for constraining the output of the models in an IMT session.
+## Repository structure
 
-There are some analysis and visualization utilities in the `utils` folder too.
+- `scr/`
+  - `train.py` - train translation models with PyTorch Lightning and optional LoRA.
+  - `imt.py` - run simulated interactive machine translation sessions.
+  - `bleu_ter.py` - evaluate translation outputs with BLEU and TER metrics.
+  - `model.py` - helper functions for model loading, dataset handling, and prompt formatting.
+  - `restriction.py` - prefix and segment restriction logic for IMT simulation.
+  - `unwrapp.py` - export trained Lightning checkpoints to Hugging Face-compatible model weights.
+- `utils/`
+  - `bleu_ter.py`, `get_means.py` - additional evaluation utilities.
+  - Notebooks for analysis: `longitudes.ipynb`, `statistical_tests.ipynb`, `tabla_oficial.py`, `unks.ipynb`.
+- `art/`
+  - Scripts and research utilities for alternative evaluation and analysis.
+- `resultados/`
+  - Example output files with metrics and evaluation results.
+- `environment.yaml`
+  - Conda environment specification for dependencies.
+- `launcher.sh`
+  - Example commands for training, evaluation, and IMT simulation.
 
-# Supported LLMs
-Here are the models that can be used directly with this repository, their scientific articles and the base models in huggingface:
-| Model | Huggingface |
-|-------|-------------|
-| [mBART](https://arxiv.org/abs/2001.08210) | facebook/mbart-large-50-many-to-many-mmt |
-| [M2M](https://arxiv.org/abs/2010.11125)   | facebook/m2m100_418M |
-| [Flan-T5](https://arxiv.org/abs/2210.11416) | google/flan-t5-base |
-| [NLLB](https://arxiv.org/abs/2207.04672) | facebook/nllb-200-distilled-600M |
-| [Llama 3.2](https://arxiv.org/abs/2407.21783) | meta-llama/Llama-3.2-1B-Instruct |
-| [EuroLLM](https://arxiv.org/abs/2409.16235) | utter-project/EuroLLM-1.7B-Instruct |
-| [Gemma 3](https://arxiv.org/abs/2503.19786) | google/gemma-3-1b-it |
+## Core functionality
 
-# Citation
-If you use this repository, please cite:
+### Training
+Use `scr/train.py` to fine-tune models for translation tasks. The script supports:
+- Source and target language selection (`-src`, `-trg`).
+- Dataset folder selection (`-dir`).
+- Model selection (`-model`, e.g. `mbart`, `m2m`, `flant5`, `nllb`, `llama`, `qwen`, `eurollm`, `gemma`).
+- Optional LoRA adaptation (`-lora`).
+- Batch size, learning rate, and number of epochs.
+
+Example:
+```bash
+python scr/train.py -src en -trg gl -dir data/gl-en/ -model gemma -lora -bs 8 -e 3
 ```
+
+### Model export
+Use `scr/unwrapp.py` to unwrap a PyTorch Lightning checkpoint and save the underlying Hugging Face model weights.
+
+Example:
+```bash
+python scr/unwrapp.py path/to/checkpoint.ckpt -src en -trg gl -model gemma -lora
+```
+
+### Standard MT evaluation
+Use `scr/bleu_ter.py` to generate translations and compute BLEU and TER scores over a dataset partition.
+
+Example:
+```bash
+python scr/bleu_ter.py -src en -trg gl -dir data/gl-en/ -p test -model path/to/model -model_name gemma -b 16
+```
+
+### Interactive MT simulation
+Use `scr/imt.py` to simulate an IMT session and compare prefix-based vs segment-based approaches.
+
+Example:
+```bash
+python scr/imt.py -src en -trg gl -dir data/gl-en/ -model path/to/model -model_name gemma -p test -out imt_output -seg
+```
+
+Options include:
+- `-seg`, `--segment_based` to enable segment-based interaction.
+- `-ini`, `--initial` to skip initial lines.
+- `-fin`, `--final` to limit evaluation to a portion of the dataset.
+- `-v`, `--verbose` for debugging output.
+
+### Supported model families
+The repository currently supports the following model families via `scr/model.py`:
+- `mbart` (`facebook/mbart-large-50-many-to-many-mmt`)
+- `m2m` (`facebook/m2m100_418M`)
+- `flant5` (`google/flan-t5-base`)
+- `nllb` (`facebook/nllb-200-distilled-600M`)
+- `llama` (`meta-llama/Llama-3.2-1B-Instruct`)
+- `qwen` (`Qwen/Qwen2.5-VL-7B-Instruct`)
+- `eurollm` (`utter-project/EuroLLM-1.7B`)
+- `gemma` (`google/gemma-3-4b-it`)
+
+## Data layout
+
+Datasets are expected in `folder/{partition}.{lang}` format, where `partition` is `train`, `dev`, or `test`, and `lang` is the two-letter language code. Example:
+- `data/gl-en/train.gl`
+- `data/gl-en/train.en`
+- `data/gl-en/test.gl`
+- `data/gl-en/test.en`
+
+## Notes
+
+- The project uses language-specific prompt formatting for decoder-only models (`llama`, `qwen`, `eurollm`, `gemma`).
+- `scr/restriction.py` contains the IMT interaction logic that enforces prefix or segment corrections during generation.
+- `launcher.sh` includes ready-to-use example commands for training, BLEU/TER evaluation, and IMT simulations.
+
+## Citation
+If you use this repository, please cite:
+```bibtex
 @inproceedings{gomez2024interactive,
   title={Interactive Machine Translation with Large Language Models in Low Resources Languages},
   author={G{\'o}mez, Sergio and Domingo, Miguel and Casacuberta, Francisco},
